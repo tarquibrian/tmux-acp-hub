@@ -104,6 +104,20 @@ window_is_dead() {
   [ "$(tmux display-message -p -t "$1" "#{pane_dead}" 2>/dev/null || true)" = "1" ]
 }
 
+# The window already hosting a given chat id, regardless of its name. A chat
+# created as "<provider>-new" keeps that window name but stores the real chat
+# id in @vanzi_hub_chat_id; reopening it by canonical name would miss this
+# window and spawn a duplicate, so match on the id.
+window_id_for_chat() {
+  window_chat_session="$1"
+  window_chat_id="$2"
+  [ -n "$window_chat_id" ] || return 1
+
+  tmux has-session -t "$window_chat_session" 2>/dev/null || return 1
+  tmux list-windows -t "$window_chat_session" -F "#{@vanzi_hub_chat_id}|#{window_id}" 2>/dev/null |
+    awk -F "|" -v chat="$window_chat_id" '$1 == chat { print $2; exit }'
+}
+
 current_acp_window_for() {
   current_session="$1"
   current_project_path="$2"

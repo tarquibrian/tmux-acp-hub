@@ -107,6 +107,19 @@ ensure_workspace() {
     cleanup_workspace_windows "$SESSION"
   fi
 
+  # Reopening a specific chat: jump to the window already hosting that chat id
+  # (its name may differ from the canonical one, e.g. a "<provider>-new"
+  # window) instead of spawning a duplicate.
+  if [ -n "$CHAT_ID" ] && [ "$ACTION" != "new" ]; then
+    chat_window_id="$(window_id_for_chat "$SESSION" "$CHAT_ID" 2>/dev/null || true)"
+    if [ -n "$chat_window_id" ] && ! window_is_dead "$chat_window_id"; then
+      set_workspace_metadata "$SESSION" "$PROJECT_PATH" "$TARGET_CLIENT" "$TARGET_PANE"
+      set_window_metadata "$chat_window_id" "$PROVIDER" "$CHAT_ID" "$ACTION" "$PROJECT_PATH"
+      tmux select-window -t "$chat_window_id"
+      return
+    fi
+  fi
+
   if [ -z "$CHAT_ID" ] && { [ "$ACTION" = "open" ] || [ "$ACTION" = "toggle" ]; }; then
     current_window_id="$(current_acp_window_for "$SESSION" "$PROJECT_PATH" "$PROVIDER" 2>/dev/null || true)"
     if [ -n "$current_window_id" ]; then
