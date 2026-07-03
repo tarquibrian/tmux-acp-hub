@@ -217,12 +217,12 @@ assert.equal(pickerNextIndex(entries, 1, 10), 5, "large jumps clamp at the last 
     pickerSupported: () => true,
     canPaintPinned: () => true,
     hub: { call: async (method, params) => { calls.push({ method, params }); } },
-    interactivePick: async (config) => {
-      // The picker was handed exactly the pending options, first preselected.
+    quickSelect: async (config) => {
+      // The menu was handed exactly the pending options, first preselected.
       assert.equal(config.items.length, 3, "one item per option");
       assert.equal(config.items[0].value, "opt-allow");
       assert.ok(config.items[0].current, "first option preselected");
-      assert.ok(config.title.includes("Ready to code?"), "tool title in the picker title");
+      assert.ok(config.title.includes("Ready to code?"), "tool title in the menu title");
       return "opt-manual";
     },
   });
@@ -246,7 +246,7 @@ assert.equal(pickerNextIndex(entries, 1, 10), 5, "large jumps clamp at the last 
     pickerSupported: () => true,
     canPaintPinned: () => true,
     hub: { call: async () => { sent = true; } },
-    interactivePick: async () => null,
+    quickSelect: async () => null,
   });
   assert.equal(await ui.showPermissionPicker(), true, "handled even on cancel");
   assert.equal(sent, false, "no response sent on Esc");
