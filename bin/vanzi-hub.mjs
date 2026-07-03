@@ -45,6 +45,10 @@ import {
   formatProviderCommand,
   formatContextUsage,
   mcpServerLabel,
+  buildMcpPanelItems,
+  buildAuthPanelItems,
+  buildPlanPanelItems,
+  buildRootsPanelItems,
   orderProjectChats,
   displayTmuxMenu,
   tmuxDisplayMessage,
@@ -841,125 +845,6 @@ function buildNewChatPanelItems(agents, context, cwd) {
   return items;
 }
 
-function planMenuMarker(status) {
-  if (status === "completed") return "✓";
-  if (status === "in_progress") return "▸";
-  if (status === "skipped" || status === "cancelled") return "⊘";
-  return "·";
-}
-
-function buildMcpPanelItems(chat, context) {
-  if (!chat) return [{ label: "No active ACP chat found for this pane", disabled: true }];
-
-  const servers = chat.mcpServers || [];
-  if (!servers.length) {
-    return [{ label: "No MCP servers configured for this chat", disabled: true }];
-  }
-
-  const items = [
-    { label: `MCP servers (${servers.length})`, disabled: true },
-    { separator: true },
-  ];
-  for (const server of servers) {
-    const target = server.url || server.command || "";
-    items.push({ label: `${mcpServerLabel(server)}  ${compactTmuxText(target, 48)}`, disabled: true });
-  }
-  return items;
-}
-
-function buildAuthPanelItems(chat, context, cwd) {
-  if (!chat) return [{ label: "No active ACP chat found for this pane", disabled: true }];
-
-  const methods = chat.authMethods || [];
-  if (!methods.length) {
-    return [{ label: "No auth methods reported by this adapter", disabled: true }];
-  }
-
-  const items = [
-    { label: `Authenticate ${chat.providerLabel || chat.provider || ""}`.trim(), disabled: true },
-    { separator: true },
-  ];
-  for (const method of methods) {
-    const id = method.id || method.methodId || "";
-    const name = method.name || id;
-    if (method.type === "env_var") {
-      const vars = Array.isArray(method.vars)
-        ? method.vars.map((v) => v.name).filter(Boolean).join(", ")
-        : "";
-      items.push({ label: `${name}  (set ${vars || "env vars"} + reopen)`, disabled: true });
-    } else {
-      items.push({ label: name, command: tmuxActionCommand(cwd, context, "auth", chat.id, id) });
-    }
-  }
-  return items;
-}
-
-function buildPlanPanelItems(chat, context) {
-  if (!chat) return [{ label: "No active ACP chat found for this pane", disabled: true }];
-
-  const entries = chat.plan?.entries || [];
-  if (!entries.length) {
-    return [{ label: "No active plan for this chat", disabled: true }];
-  }
-
-  const done = entries.filter((entry) => entry.status === "completed").length;
-  const items = [
-    { label: `Plan  ${done}/${entries.length} done`, disabled: true },
-    { separator: true },
-  ];
-  for (const entry of entries) {
-    items.push({
-      label: `${planMenuMarker(entry.status)} ${compactTmuxText(cleanInline(entry.content), 64)}`,
-      disabled: true,
-    });
-  }
-  return items;
-}
-
-function buildRootsPanelItems(chat, context, cwd) {
-  if (!chat) return [{ label: "No active ACP chat found for this pane", disabled: true }];
-
-  const roots = normalizeAdditionalDirectories(chat.additionalDirectories || [], chat.cwd || cwd);
-  const items = [
-    { label: `main  ${displayPath(chat.cwd || cwd)}`, disabled: true },
-    { label: "Changes are applied on next adapter restore", disabled: true },
-    { separator: true },
-    {
-      label: "Add directory...",
-      key: "a",
-      command: tmuxPromptActionCommand(cwd, context, "roots-add", chat.id, "Add workspace root"),
-    },
-  ];
-
-  if (roots.length) {
-    items.push({ separator: true });
-    for (const [index, root] of roots.entries()) {
-      items.push({
-        label: `Remove ${displayPath(root)}`,
-        key: index < 9 ? String(index + 1) : "",
-        command: tmuxConfirmActionCommand(
-          cwd,
-          context,
-          "roots-remove",
-          chat.id,
-          `Remove workspace root ${displayPath(root)}?`,
-          root,
-        ),
-      });
-    }
-    items.push({ separator: true });
-    items.push({
-      label: "Clear additional roots",
-      key: "x",
-      command: tmuxConfirmActionCommand(cwd, context, "roots-clear", chat.id, "Clear all additional roots?"),
-    });
-  } else {
-    items.push({ label: "No additional directories configured", disabled: true });
-  }
-
-  return items;
-}
-
 function buildActivityPanelItems(context) {
   return [
     { label: "Controls tool/event rendering in this chat pane", disabled: true },
@@ -1110,6 +995,10 @@ async function main() {
       break;
     case "ui":
       await runUi(args);
+      // The UI toggles raw mode and resumes stdin, which keeps the event loop
+      // alive after run() returns; without an explicit exit the pane lingers
+      // as a black zombie window that prefix+M keeps selecting.
+      process.exit(process.exitCode || 0);
       break;
     case "health":
       await runHealth();
