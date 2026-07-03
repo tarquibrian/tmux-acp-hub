@@ -270,14 +270,14 @@ The main project directory is always the session `cwd`. Command Center
 `additionalDirectories` for restore/load flows when the adapter supports them.
 
 The chat input uses a pinned raw terminal composer when TTY support is
-available. The chat transcript scrolls above a rounded composer box: the top
-border embeds the status (with an animated spinner while working), the provider
-name, and any badges; the border is tinted with the provider's accent color and
-switches to yellow for permission/auth and red for error states. Below the box
-sits a metadata footer such as
+available. The chat transcript scrolls above a half-box composer: a single
+top rule embeds the status (with an animated spinner while working), the
+provider name, and any badges; the rule is tinted with the provider's accent
+color and switches to yellow for permission/auth and red for error states.
+The input sits flat below it, and then a metadata footer such as
 `gpt-5.5 xhigh · 45k/200k (23%) $0.12 · auto · ~/.config`; when the ACP adapter
 reports model, reasoning, access, permission, or mode values the footer uses
-those values. When the input wraps beyond six rows, the bottom border shows
+those values. When the input wraps beyond six rows, the footer adds
 `↑ N more` / `↓ N more` counters. On popups shorter than 15 rows — or with
 `VANZI_HUB_COMPOSER_BOX=0` — the composer falls back to the flat divider layout. When the adapter sends ACP `usage_update` events, the footer adds
 a context-window segment (`used/size (percent)`) and the cumulative session cost

@@ -43,18 +43,17 @@ const session = (line = "") => ({ pinned: true, line, cursor: line.length });
   const ui = makeUi();
   const layout = ui.rawInputLayout(session(""));
   assert.equal(layout.boxed, true, "boxed on 30 rows");
-  // gap + 1 input row + top border + bottom border + footer = 5 composer rows
-  assert.equal(layout.outputBottom, 30 - 5);
-  assert.equal(layout.gapRow, 25, "blank gap row between transcript and box");
-  assert.equal(layout.dividerRow, 26, "top border row");
-  assert.equal(layout.inputRow, 27);
-  assert.equal(layout.boxBottomRow, 28);
+  // gap + top rule + 1 input row + footer = 4 composer rows (half-box style)
+  assert.equal(layout.outputBottom, 30 - 4);
+  assert.equal(layout.gapRow, 26, "blank gap row between transcript and box");
+  assert.equal(layout.dividerRow, 27, "top rule row");
+  assert.equal(layout.inputRow, 28);
+  assert.equal(layout.boxBottomRow, null, "half-box has no bottom border");
   assert.equal(layout.footerRow, 29);
-  assert.ok(layout.composerRows.includes(layout.boxBottomRow), "bottom border cleared on layout change");
   assert.ok(layout.composerRows.includes(layout.gapRow), "gap row cleared on layout change");
-  // interior loses 4 columns to the borders vs the flat layout
+  // interior loses only the left indent vs the flat layout
   const flatWidth = ui.rawInputTextWidth(session(""), 100, false);
-  assert.equal(layout.inputWidth, flatWidth - 4);
+  assert.equal(layout.inputWidth, flatWidth - 2);
 }
 
 // --- Degrade rule ---------------------------------------------------------------
@@ -108,12 +107,11 @@ const session = (line = "") => ({ pinned: true, line, cursor: line.length });
     process.stdout.write = original;
   }
   const plain = strip(out);
-  assert.ok(plain.includes("╭─"), "top border painted");
-  assert.ok(plain.includes("╰"), "bottom border painted");
-  assert.ok(plain.includes("│ "), "side borders painted");
-  assert.ok(plain.includes("hello box"), "input text inside the box");
-  assert.ok(plain.includes("idle"), "status embedded in the top border");
-  assert.ok(out.includes("\x1b[38;5;43m"), "codex accent tints the border");
+  assert.ok(/─ .*idle.*─/.test(plain), "top rule painted with embedded status");
+  assert.ok(!plain.includes("╭") && !plain.includes("╰"), "no box corners (half-box style)");
+  assert.ok(!plain.includes("│"), "no side borders");
+  assert.ok(plain.includes("hello box"), "input text painted");
+  assert.ok(out.includes("\x1b[38;5;43m"), "codex accent tints the rule");
 }
 
 // --- Attention state overrides the border color ----------------------------------

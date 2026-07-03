@@ -1,6 +1,6 @@
 # tmux-vanzi-hub · Visual Design System
 
-Decisions locked 2026-07-02: **hybrid layout** (boxed composer, flat transcript)
+Decisions locked 2026-07-02 (composer restyled to half-box 2026-07-03): **hybrid layout** (half-box composer, flat transcript)
 with **provider-tinted accents** overridden by semantic state colors.
 
 ## Principles
@@ -80,16 +80,19 @@ the **whole border** to the semantic color.
 
 ## Component specs
 
-### Composer (boxed)
+### Composer (half-box, 2026-07-03)
 
 ```
-╭─ ⠹ responding · Codex ── [PLAN] ─────────────────────────╮
-│ ❯ how do I make the table wider▏                         │
-│   second wrapped line…                                   │
-╰──────────────────────────────────────────────────────────╯
+─ ⠹ responding · Codex ── [PLAN] ──────────────────────────
+  ❯ how do I make the table wider▏
+    second wrapped line…
   gpt-5.5 xhigh · 45k/200k 23% · 2 queued · +1 mcp · ~/.config
   / commands · @ files · Ctrl+J newline
 ```
+
+A single accent-tinted top rule carries the status/provider/badges; the input
+and meta lines are flat below it (no side or bottom borders — one row cheaper
+and closer to the flat transcript).
 
 - Border: provider color; permission/auth → `sem.warn`, error → `sem.err`.
 - Top border embeds: status glyph+word (semantic color, spinner animates),
