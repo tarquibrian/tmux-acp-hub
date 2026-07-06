@@ -80,14 +80,15 @@ if [ "$ACTION" = "toggle" ]; then
 fi
 
 window_name() {
-  base_name="$(canonical_acp_window_name "$PROJECT_PATH" "$PROVIDER" "$CHAT_ID" "$ACTION")"
-
-  if [ "$ACTION" = "new" ]; then
-    unique_window_name "$SESSION" "$base_name"
+  # The menu window keeps its stable "menu" name (used for toggle/reuse). Chat
+  # windows get a clean provider label as a placeholder; the UI renames the
+  # window to the chat title once it knows it. Identity is @vanzi_hub_chat_id,
+  # not the name, so the name is purely cosmetic and never a hash.
+  if [ "$ACTION" = "menu" ]; then
+    printf "menu"
     return
   fi
-
-  printf "%s" "$base_name"
+  clean_provider_label "$PROVIDER"
 }
 
 window_command() {
@@ -146,13 +147,17 @@ ensure_workspace() {
 
   if ! tmux has-session -t "$SESSION" 2>/dev/null; then
     window_id="$(tmux new-session -d -P -F "#{window_id}" -s "$SESSION" -n "$name" -c "$PROJECT_PATH" "$cmd")"
-  elif ! window_exists "$SESSION" "$name"; then
-    window_id="$(tmux new-window -d -P -F "#{window_id}" -t "$SESSION:" -n "$name" -c "$PROJECT_PATH" "$cmd")"
-  else
+  elif [ "$ACTION" = "menu" ] && window_exists "$SESSION" "$name"; then
+    # The menu window is a singleton reused by its stable name.
     window_id="$(window_id_for "$SESSION" "$name")"
     if window_is_dead "$window_id"; then
       tmux respawn-window -k -t "$window_id" -c "$PROJECT_PATH" "$cmd"
     fi
+  else
+    # Chats are identified by @vanzi_hub_chat_id (deduped above), so always
+    # open a fresh window here — never reuse a same-named window, which could
+    # belong to a different chat.
+    window_id="$(tmux new-window -d -P -F "#{window_id}" -t "$SESSION:" -n "$name" -c "$PROJECT_PATH" "$cmd")"
   fi
 
   set_workspace_metadata "$SESSION" "$PROJECT_PATH" "$TARGET_CLIENT" "$TARGET_PANE"

@@ -143,10 +143,10 @@ one chat, and the pane inside it runs a disposable UI client. Consequences:
 - The transcript is persisted (last 200 events) with the session metadata, so
   it also survives daemon restarts (`vanzi-hub.mjs stop`) — restored chats
   replay their saved transcript even when the adapter cannot reload history.
-- Window *names* (`project-hash-provider…`) are internal identity and are
-  auto-restored if changed; the label you see in the status bar comes from the
-  chat title. That is why `prefix+,` inside the workspace renames the chat
-  instead of the window.
+- A chat window is named after its chat title (a clean provider label like
+  `Codex` until the title is known); identity is the `@vanzi_hub_chat_id`
+  window option, not the name. `prefix+,` renames the chat (title + window
+  name together).
 - Splitting panes inside a chat window is plain tmux; extra panes are not
   chats.
 
@@ -168,14 +168,13 @@ you can jump between project agents without visiting the normal tmux project
 session first. Mini action menus live under `prefix+y`.
 Set `@vanzi_hub_workspace_scope` to `global` to restore the single `vanzi-hub`
 workspace mode.
-Window names are deterministic and used internally for identity: they look like
-`project-hash-provider` for the default chat, `project-hash-provider-new`,
-`project-hash-provider-new-2`, etc. for extra chats, and
-`project-hash-provider-chatHash` for restored ones. Those raw names are not shown
-in the status bar; inside the ACP workspace each window renders as a minimal
-label built from chat metadata — the provider icon in its accent color (`❋`
-Claude, `⬡` Codex, `◆` others; override per agent with an `icon` field in
-agents.json), the chat title, and a status glyph only while the chat needs
+Each chat window is named after its chat title (a clean provider label like
+`Codex` or `Claude` until the title is known) and identified internally by the
+`@vanzi_hub_chat_id` window option, not by its name. Inside the ACP workspace
+each window renders as a minimal label built from chat metadata — the provider
+icon in its accent color (`❋` Claude, `⬡` Codex, `◆` others; override per agent
+with an `icon` field in agents.json), the chat title, and a status glyph only
+while the chat needs
 attention (working, permission, auth, error) — for example `❋ Refactor auth ⠹`.
 Renaming the chat with `/rename` or `prefix+,` updates that label without
 changing the internal window name.

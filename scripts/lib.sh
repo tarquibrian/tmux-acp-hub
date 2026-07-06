@@ -96,10 +96,6 @@ window_exists() {
   tmux list-windows -t "$1" -F "#{window_name}" 2>/dev/null | grep -Fxq "$2"
 }
 
-window_id_for() {
-  tmux list-windows -t "$1" -F "#{window_id} #{window_name}" 2>/dev/null | awk -v name="$2" '$2 == name { print $1; exit }'
-}
-
 window_is_dead() {
   [ "$(tmux display-message -p -t "$1" "#{pane_dead}" 2>/dev/null || true)" = "1" ]
 }
@@ -170,85 +166,22 @@ safe_name() {
   [ -n "$value" ] && printf "%.24s" "$value" || printf "project"
 }
 
-canonical_acp_window_name() {
-  canonical_project_path="$1"
-  canonical_provider="$2"
-  canonical_chat_id="$3"
-  canonical_action="$4"
-  canonical_project_slug="$(safe_name "$(basename "$canonical_project_path")")"
-  canonical_project_hash="$(path_hash "$canonical_project_path")"
-
-  if [ "$canonical_action" = "menu" ]; then
-    printf "menu"
-  elif [ -n "$canonical_chat_id" ]; then
-    printf "%s-%s-%s-%s" "$canonical_project_slug" "$canonical_project_hash" "$canonical_provider" "$(path_hash "$canonical_chat_id")"
-  elif [ "$canonical_action" = "new" ]; then
-    printf "%s-%s-%s-new" "$canonical_project_slug" "$canonical_project_hash" "$canonical_provider"
-  else
-    printf "%s-%s-%s" "$canonical_project_slug" "$canonical_project_hash" "$canonical_provider"
-  fi
-}
-
-unique_window_name() {
-  unique_session="$1"
-  unique_base="$2"
-  unique_current_id="${3:-}"
-  unique_candidate="$unique_base"
-  unique_index=2
-
-  while :; do
-    unique_existing_id="$(window_id_for "$unique_session" "$unique_candidate")"
-    if [ -z "$unique_existing_id" ] || [ "$unique_existing_id" = "$unique_current_id" ]; then
-      printf "%s" "$unique_candidate"
-      return 0
-    fi
-
-    unique_candidate="$unique_base-$unique_index"
-    unique_index=$((unique_index + 1))
-  done
-}
-
+# Chat windows are named by their title (managed by the UI) and identified by
+# @vanzi_hub_chat_id, so there is no canonical name to heal here anymore. The
+# one thing worth reclaiming: the singleton "menu" name if that window ended up
+# hosting a chat, so the next prefix+M can create a fresh menu window.
 cleanup_workspace_windows() {
   cleanup_session="$1"
   cleanup_separator="|"
 
   tmux has-session -t "$cleanup_session" 2>/dev/null || return 0
 
-  tmux list-windows -t "$cleanup_session" -F "#{window_id}|#{window_name}|#{@vanzi_hub_project_path}|#{@vanzi_hub_provider}|#{@vanzi_hub_chat_id}|#{@vanzi_hub_action}" 2>/dev/null |
-    while IFS="$cleanup_separator" read -r cleanup_window_id cleanup_window_name cleanup_project_path cleanup_provider cleanup_chat_id cleanup_action; do
+  tmux list-windows -t "$cleanup_session" -F "#{window_id}|#{window_name}|#{@vanzi_hub_provider}|#{@vanzi_hub_action}" 2>/dev/null |
+    while IFS="$cleanup_separator" read -r cleanup_window_id cleanup_window_name cleanup_provider cleanup_action; do
       [ -n "$cleanup_window_id" ] || continue
-      [ -n "$cleanup_project_path" ] || continue
-      [ -n "$cleanup_provider" ] || continue
-
-      cleanup_desired=""
-      cleanup_canonical="$(canonical_acp_window_name "$cleanup_project_path" "$cleanup_provider" "$cleanup_chat_id" "$cleanup_action")"
-
-      case "$cleanup_window_name" in
-        [![:alnum:]]*) cleanup_desired="$cleanup_canonical" ;;
-      esac
-
-      # A window still named "menu" that now hosts a chat view (a chat was
-      # opened from the picker in that window) must give the name back, or
-      # prefix+M keeps landing on the chat instead of a fresh menu.
-      if [ -z "$cleanup_desired" ] && [ "$cleanup_window_name" = "menu" ] && [ "$cleanup_action" != "menu" ]; then
-        cleanup_desired="$cleanup_canonical"
+      if [ "$cleanup_window_name" = "menu" ] && [ -n "$cleanup_action" ] && [ "$cleanup_action" != "menu" ]; then
+        tmux rename-window -t "$cleanup_window_id" "$(clean_provider_label "$cleanup_provider")" 2>/dev/null || true
       fi
-
-      if [ -z "$cleanup_desired" ] && [ "$cleanup_action" = "new" ]; then
-        case "$cleanup_window_name" in
-          "$cleanup_canonical"-[0-9]*-*) cleanup_desired="$cleanup_canonical" ;;
-        esac
-      fi
-
-      [ -n "$cleanup_desired" ] || continue
-      cleanup_existing_id="$(window_id_for "$cleanup_session" "$cleanup_desired")"
-      if [ -n "$cleanup_existing_id" ] && [ "$cleanup_existing_id" != "$cleanup_window_id" ]; then
-        cleanup_desired="$cleanup_desired-legacy"
-      fi
-
-      cleanup_target="$(unique_window_name "$cleanup_session" "$cleanup_desired" "$cleanup_window_id")"
-      [ "$cleanup_window_name" = "$cleanup_target" ] && continue
-      tmux rename-window -t "$cleanup_window_id" "$cleanup_target" 2>/dev/null || true
     done
 }
 
@@ -259,18 +192,13 @@ set_window_metadata() {
   action="$4"
   project_path="$5"
   project_name="$(basename "$project_path")"
-  provider_short="$(printf '%s' "$provider" | awk '{ print toupper(substr($0, 1, 1)) substr($0, 2) }')"
-  window_title="New chat"
+  provider_short="$(clean_provider_label "$provider")"
   status_detail="Starting ACP"
-
   if [ "$action" = "new" ]; then
-    window_title="New chat"
     status_detail="Creating new ACP session"
   elif [ -n "$chat_id" ]; then
-    window_title="Restored chat"
     status_detail="Restoring ACP session"
   elif [ "$action" = "menu" ]; then
-    window_title="ACP menu"
     status_detail="Opening ACP menu"
   fi
 
@@ -280,6 +208,10 @@ set_window_metadata() {
     *) provider_icon="◆" ;;
   esac
 
+  # Never fight the name we set: automatic-rename would relabel the window to
+  # the running process ("node"). The tab title is the window name (kept in
+  # sync with the chat title by the UI) or, until then, the clean creation name.
+  tmux set-window-option -t "$target" -q automatic-rename off
   tmux set-window-option -t "$target" -q @vanzi_hub_provider "$provider"
   tmux set-window-option -t "$target" -q @vanzi_hub_provider_short "$provider_short"
   tmux set-window-option -t "$target" -q @vanzi_hub_provider_icon "$provider_icon"
@@ -294,8 +226,20 @@ set_window_metadata() {
   tmux set-window-option -t "$target" -q @vanzi_hub_mode ""
   tmux set-window-option -t "$target" -q @vanzi_hub_model ""
   tmux set-window-option -t "$target" -q @vanzi_hub_effort ""
-  tmux set-window-option -t "$target" -q @vanzi_hub_title "$window_title"
+  # Empty title → the tab falls back to the clean window name (#W) instead of a
+  # placeholder; the UI fills in the real title and renames the window.
+  tmux set-window-option -t "$target" -q @vanzi_hub_title ""
   refresh_status_line
+}
+
+# Human window/tab name for a provider: "Codex", "Claude", capitalized default.
+clean_provider_label() {
+  case "$1" in
+    codex) printf "Codex" ;;
+    claude) printf "Claude" ;;
+    "") printf "Chat" ;;
+    *) printf '%s' "$1" | awk '{ print toupper(substr($0, 1, 1)) substr($0, 2) }' ;;
+  esac
 }
 
 # Window-status labels are not re-rendered on option changes; force it. A bare
