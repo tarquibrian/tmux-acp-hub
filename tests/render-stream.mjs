@@ -4,7 +4,7 @@
 // the middle of a table row let the header/separator flush early, leaving the
 // data rows to render raw.
 import assert from "node:assert/strict";
-import { PopupUi } from "../bin/vanzi-hub.mjs";
+import { PopupUi } from "../bin/acp-hub.mjs";
 
 function makeUi() {
   const ui = Object.create(PopupUi.prototype);

@@ -1,10 +1,10 @@
 {
-  "name": "tmux-vanzi-hub",
+  "name": "tmux-acp-hub",
   "version": "0.1.0",
-  "description": "Vanzi Hub — a persistent multi-agent ACP hub for tmux: Codex, Claude Code, and any Agent Client Protocol agent in popups, with saved transcripts",
+  "description": "ACP Hub — a persistent multi-agent hub for tmux: Codex, Claude Code, and any Agent Client Protocol agent in popups, with saved transcripts",
   "type": "module",
   "bin": {
-    "vanzi-hub": "bin/vanzi-hub.mjs"
+    "acp-hub": "bin/acp-hub.mjs"
   },
   "keywords": [
     "tmux",
@@ -18,11 +18,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/tarquibrian/tmux-vanzi-hub.git"
+    "url": "git+https://github.com/tarquibrian/tmux-acp-hub.git"
   },
-  "homepage": "https://github.com/tarquibrian/tmux-vanzi-hub#readme",
+  "homepage": "https://github.com/tarquibrian/tmux-acp-hub#readme",
   "bugs": {
-    "url": "https://github.com/tarquibrian/tmux-vanzi-hub/issues"
+    "url": "https://github.com/tarquibrian/tmux-acp-hub/issues"
   },
   "author": "Brian Tarqui",
   "license": "MIT",

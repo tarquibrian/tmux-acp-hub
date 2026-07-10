@@ -12,11 +12,11 @@ tmux_option() {
   [ -n "$value" ] && printf "%s" "$value" || printf "%s" "$2"
 }
 
-NODE_BIN="$(tmux_option @vanzi_hub_node "node")"
-DEFAULT_AGENT="$(tmux_option @vanzi_hub_default_agent "")"
+NODE_BIN="$(tmux_option @acp_hub_node "node")"
+DEFAULT_AGENT="$(tmux_option @acp_hub_default_agent "")"
 
 if [ -n "$DEFAULT_AGENT" ]; then
-  exec "$NODE_BIN" "$CURRENT_DIR/bin/vanzi-hub.mjs" tmux-menu --cwd "$CWD" --session "$CURRENT_SESSION" --client "$TARGET_CLIENT" --pane "$TARGET_PANE" --default-agent "$DEFAULT_AGENT"
+  exec "$NODE_BIN" "$CURRENT_DIR/bin/acp-hub.mjs" tmux-menu --cwd "$CWD" --session "$CURRENT_SESSION" --client "$TARGET_CLIENT" --pane "$TARGET_PANE" --default-agent "$DEFAULT_AGENT"
 fi
 
-exec "$NODE_BIN" "$CURRENT_DIR/bin/vanzi-hub.mjs" tmux-menu --cwd "$CWD" --session "$CURRENT_SESSION" --client "$TARGET_CLIENT" --pane "$TARGET_PANE"
+exec "$NODE_BIN" "$CURRENT_DIR/bin/acp-hub.mjs" tmux-menu --cwd "$CWD" --session "$CURRENT_SESSION" --client "$TARGET_CLIENT" --pane "$TARGET_PANE"

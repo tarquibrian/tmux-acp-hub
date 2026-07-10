@@ -21,8 +21,8 @@ ACTION="${7:-open}"
 #   menu shows in this same pane instead of a separate window;
 # - anywhere else (a normal pane) → fall through to the cold-start flow below.
 if [ "$ACTION" = "menu" ] && [ -n "$TARGET_PANE" ]; then
-  current_action="$(tmux display-message -p -t "$TARGET_PANE" "#{@vanzi_hub_action}" 2>/dev/null || true)"
-  current_chat="$(tmux display-message -p -t "$TARGET_PANE" "#{@vanzi_hub_chat_id}" 2>/dev/null || true)"
+  current_action="$(tmux display-message -p -t "$TARGET_PANE" "#{@acp_hub_action}" 2>/dev/null || true)"
+  current_chat="$(tmux display-message -p -t "$TARGET_PANE" "#{@acp_hub_chat_id}" 2>/dev/null || true)"
   if [ "$current_action" = "menu" ]; then
     tmux send-keys -t "$TARGET_PANE" Escape
     exit 0
@@ -45,14 +45,14 @@ SESSION="$(acp_session_name "$PROJECT_PATH")"
 [ -n "$PROVIDER" ] || PROVIDER="$(default_agent)"
 
 stored_project_chat() {
-  "$(node_bin)" "$CURRENT_DIR/bin/vanzi-hub.mjs" project-chat --cwd "$PROJECT_PATH" 2>/dev/null || true
+  "$(node_bin)" "$CURRENT_DIR/bin/acp-hub.mjs" project-chat --cwd "$PROJECT_PATH" 2>/dev/null || true
 }
 
 # Project with no chats: ask the hub what to do. "create" means no chats exist
 # anywhere (or no tmux to draw a menu), so a chat is created directly; any
 # other answer means a native menu was shown and took over the flow.
 toggle_menu_decision() {
-  "$(node_bin)" "$CURRENT_DIR/bin/vanzi-hub.mjs" tmux-toggle-menu \
+  "$(node_bin)" "$CURRENT_DIR/bin/acp-hub.mjs" tmux-toggle-menu \
     --cwd "$PROJECT_PATH" \
     --session "$CURRENT_SESSION" \
     --client "$TARGET_CLIENT" \
@@ -89,7 +89,7 @@ fi
 window_name() {
   # The menu window keeps its stable "menu" name (used for toggle/reuse). Chat
   # windows get a clean provider label as a placeholder; the UI renames the
-  # window to the chat title once it knows it. Identity is @vanzi_hub_chat_id,
+  # window to the chat title once it knows it. Identity is @acp_hub_chat_id,
   # not the name, so the name is purely cosmetic and never a hash.
   if [ "$ACTION" = "menu" ]; then
     printf "menu"
@@ -100,7 +100,7 @@ window_name() {
 
 window_command() {
   node="$(node_bin)"
-  bin="$CURRENT_DIR/bin/vanzi-hub.mjs"
+  bin="$CURRENT_DIR/bin/acp-hub.mjs"
 
   if [ "$ACTION" = "menu" ]; then
     printf "%s %s ui --mode menu --cwd %s" "$(shell_quote "$node")" "$(shell_quote "$bin")" "$(shell_quote "$PROJECT_PATH")"
@@ -161,7 +161,7 @@ ensure_workspace() {
       tmux respawn-window -k -t "$window_id" -c "$PROJECT_PATH" "$cmd"
     fi
   else
-    # Chats are identified by @vanzi_hub_chat_id (deduped above), so always
+    # Chats are identified by @acp_hub_chat_id (deduped above), so always
     # open a fresh window here — never reuse a same-named window, which could
     # belong to a different chat.
     window_id="$(tmux new-window -d -P -F "#{window_id}" -t "$SESSION:" -n "$name" -c "$PROJECT_PATH" "$cmd")"

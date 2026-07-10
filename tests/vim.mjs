@@ -8,7 +8,7 @@ process.stdout.columns = 100;
 process.stdout.rows = 30;
 delete process.env.TMUX;
 
-const { PopupUi } = await import("../bin/vanzi-hub.mjs");
+const { PopupUi } = await import("../bin/acp-hub.mjs");
 
 function makeUi() {
   const ui = Object.create(PopupUi.prototype);

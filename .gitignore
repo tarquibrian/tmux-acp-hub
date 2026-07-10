@@ -8,4 +8,4 @@ node_modules/
 *.swp
 *.log
 
-# Runtime state lives in ~/.cache/tmux-vanzi-hub, never in the repo
+# Runtime state lives in ~/.cache/tmux-acp-hub, never in the repo

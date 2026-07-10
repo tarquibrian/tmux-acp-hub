@@ -1,4 +1,4 @@
-# tmux-vanzi-hub Roadmap
+# tmux-acp-hub Roadmap
 
 ## Phase 1: Protocol Stability - done
 

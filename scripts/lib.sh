@@ -10,7 +10,7 @@ project_root() {
 }
 
 path_hash() {
-  hash_length="$(tmux_option @vanzi_hub_hash_length 8)"
+  hash_length="$(tmux_option @acp_hub_hash_length 8)"
 
   if command -v md5sum >/dev/null 2>&1; then
     printf "%s" "$1" | md5sum | cut -c1-"$hash_length"
@@ -20,33 +20,33 @@ path_hash() {
 }
 
 acp_workspace_scope() {
-  tmux_option @vanzi_hub_workspace_scope "project"
+  tmux_option @acp_hub_workspace_scope "project"
 }
 
 acp_global_session_name() {
-  tmux_option @vanzi_hub_workspace_session "vanzi-hub"
+  tmux_option @acp_hub_workspace_session "acp-hub"
 }
 
 acp_project_session_name() {
   project_path="$1"
-  prefix="$(tmux_option @vanzi_hub_session_prefix vz)"
+  prefix="$(tmux_option @acp_hub_session_prefix acp)"
   project_slug="$(safe_name "$(basename "$project_path")")"
   project_hash="$(path_hash "$project_path")"
 
   printf "%s-%s-%s" "$prefix" "$project_slug" "$project_hash"
 }
 
-# Friendly session resolution: sessions are named <prefix>-<slug> (vz-<slug>
+# Friendly session resolution: sessions are named <prefix>-<slug> (acp-<slug>
 # by default, with -2/-3 when another project owns the slug) so tree views
-# read cleanly. Identity lives in the @vanzi_hub_project_path session option,
+# read cleanly. Identity lives in the @acp_hub_project_path session option,
 # not the name; the legacy <prefix>-<slug>-<hash> deterministic name is still
 # honored so live sessions from older versions keep working until they die.
 acp_project_session() {
   project_path="$1"
-  prefix="$(tmux_option @vanzi_hub_session_prefix vz)"
+  prefix="$(tmux_option @acp_hub_session_prefix acp)"
   tab="$(printf '\t')"
 
-  found="$(tmux list-sessions -F "#{session_name}${tab}#{@vanzi_hub_project_path}" 2>/dev/null |
+  found="$(tmux list-sessions -F "#{session_name}${tab}#{@acp_hub_project_path}" 2>/dev/null |
     awk -F "\t" -v pre="$prefix-" -v path="$project_path" \
       'index($1, pre) == 1 && $2 == path { print $1; exit }')"
   if [ -n "$found" ]; then
@@ -82,7 +82,7 @@ acp_session_name() {
 }
 
 is_acp_session() {
-  prefix="$(tmux_option @vanzi_hub_session_prefix vz)"
+  prefix="$(tmux_option @acp_hub_session_prefix acp)"
   workspace="$(acp_global_session_name)"
 
   case "$1" in
@@ -97,7 +97,7 @@ window_exists() {
 }
 
 # Window id for a window matched by exact name in a session. Used to reuse the
-# singleton "menu" window; chat windows are matched by @vanzi_hub_chat_id.
+# singleton "menu" window; chat windows are matched by @acp_hub_chat_id.
 window_id_for() {
   tmux list-windows -t "$1" -F "#{window_id} #{window_name}" 2>/dev/null |
     awk -v name="$2" '$2 == name { print $1; exit }'
@@ -109,7 +109,7 @@ window_is_dead() {
 
 # The window already hosting a given chat id, regardless of its name. A chat
 # created as "<provider>-new" keeps that window name but stores the real chat
-# id in @vanzi_hub_chat_id; reopening it by canonical name would miss this
+# id in @acp_hub_chat_id; reopening it by canonical name would miss this
 # window and spawn a duplicate, so match on the id.
 window_id_for_chat() {
   window_chat_session="$1"
@@ -117,7 +117,7 @@ window_id_for_chat() {
   [ -n "$window_chat_id" ] || return 1
 
   tmux has-session -t "$window_chat_session" 2>/dev/null || return 1
-  tmux list-windows -t "$window_chat_session" -F "#{@vanzi_hub_chat_id}|#{window_id}" 2>/dev/null |
+  tmux list-windows -t "$window_chat_session" -F "#{@acp_hub_chat_id}|#{window_id}" 2>/dev/null |
     awk -F "|" -v chat="$window_chat_id" '$1 == chat { print $2; exit }'
 }
 
@@ -127,7 +127,7 @@ current_acp_window_for() {
   current_provider="$3"
 
   tmux has-session -t "$current_session" 2>/dev/null || return 1
-  tmux list-windows -t "$current_session" -F "#{@vanzi_hub_project_path}|#{@vanzi_hub_provider}|#{@vanzi_hub_action}|#{@vanzi_hub_status}|#{@vanzi_hub_updated_at}|#{window_activity}|#{window_id}" 2>/dev/null |
+  tmux list-windows -t "$current_session" -F "#{@acp_hub_project_path}|#{@acp_hub_provider}|#{@acp_hub_action}|#{@acp_hub_status}|#{@acp_hub_updated_at}|#{window_activity}|#{window_id}" 2>/dev/null |
     awk -F "|" -v project="$current_project_path" -v provider="$current_provider" '
       $1 == project && $2 == provider && $3 != "menu" && $4 != "closed" && $4 != "stopped" && $4 != "error" {
         score = $5 != "" ? $5 : sprintf("%020d", $6)
@@ -147,7 +147,7 @@ last_acp_window_for_project() {
   current_project_path="$2"
 
   tmux has-session -t "$current_session" 2>/dev/null || return 1
-  tmux list-windows -t "$current_session" -F "#{window_active}|#{@vanzi_hub_project_path}|#{@vanzi_hub_action}|#{pane_dead}|#{@vanzi_hub_updated_at}|#{window_activity}|#{window_id}" 2>/dev/null |
+  tmux list-windows -t "$current_session" -F "#{window_active}|#{@acp_hub_project_path}|#{@acp_hub_action}|#{pane_dead}|#{@acp_hub_updated_at}|#{window_activity}|#{window_id}" 2>/dev/null |
     awk -F "|" -v project="$current_project_path" '
       $2 == project && $3 != "menu" && $4 != "1" {
         if ($1 == "1") {
@@ -174,7 +174,7 @@ safe_name() {
 }
 
 # Chat windows are named by their title (managed by the UI) and identified by
-# @vanzi_hub_chat_id, so there is no canonical name to heal here anymore. The
+# @acp_hub_chat_id, so there is no canonical name to heal here anymore. The
 # one thing worth reclaiming: the singleton "menu" name if that window ended up
 # hosting a chat, so the next prefix+M can create a fresh menu window.
 cleanup_workspace_windows() {
@@ -183,7 +183,7 @@ cleanup_workspace_windows() {
 
   tmux has-session -t "$cleanup_session" 2>/dev/null || return 0
 
-  tmux list-windows -t "$cleanup_session" -F "#{window_id}|#{window_name}|#{@vanzi_hub_provider}|#{@vanzi_hub_action}" 2>/dev/null |
+  tmux list-windows -t "$cleanup_session" -F "#{window_id}|#{window_name}|#{@acp_hub_provider}|#{@acp_hub_action}" 2>/dev/null |
     while IFS="$cleanup_separator" read -r cleanup_window_id cleanup_window_name cleanup_provider cleanup_action; do
       [ -n "$cleanup_window_id" ] || continue
       if [ "$cleanup_window_name" = "menu" ] && [ -n "$cleanup_action" ] && [ "$cleanup_action" != "menu" ]; then
@@ -219,23 +219,23 @@ set_window_metadata() {
   # the running process ("node"). The tab title is the window name (kept in
   # sync with the chat title by the UI) or, until then, the clean creation name.
   tmux set-window-option -t "$target" -q automatic-rename off
-  tmux set-window-option -t "$target" -q @vanzi_hub_provider "$provider"
-  tmux set-window-option -t "$target" -q @vanzi_hub_provider_short "$provider_short"
-  tmux set-window-option -t "$target" -q @vanzi_hub_provider_icon "$provider_icon"
-  tmux set-window-option -t "$target" -q @vanzi_hub_chat_id "$chat_id"
-  tmux set-window-option -t "$target" -q @vanzi_hub_action "$action"
-  tmux set-window-option -t "$target" -q @vanzi_hub_project_path "$project_path"
-  tmux set-window-option -t "$target" -q @vanzi_hub_project_name "$project_name"
-  tmux set-window-option -t "$target" -q @vanzi_hub_project_hash "$(path_hash "$project_path")"
-  tmux set-window-option -t "$target" -q @vanzi_hub_status "starting"
-  tmux set-window-option -t "$target" -q @vanzi_hub_status_glyph "◌"
-  tmux set-window-option -t "$target" -q @vanzi_hub_status_detail "$status_detail"
-  tmux set-window-option -t "$target" -q @vanzi_hub_mode ""
-  tmux set-window-option -t "$target" -q @vanzi_hub_model ""
-  tmux set-window-option -t "$target" -q @vanzi_hub_effort ""
+  tmux set-window-option -t "$target" -q @acp_hub_provider "$provider"
+  tmux set-window-option -t "$target" -q @acp_hub_provider_short "$provider_short"
+  tmux set-window-option -t "$target" -q @acp_hub_provider_icon "$provider_icon"
+  tmux set-window-option -t "$target" -q @acp_hub_chat_id "$chat_id"
+  tmux set-window-option -t "$target" -q @acp_hub_action "$action"
+  tmux set-window-option -t "$target" -q @acp_hub_project_path "$project_path"
+  tmux set-window-option -t "$target" -q @acp_hub_project_name "$project_name"
+  tmux set-window-option -t "$target" -q @acp_hub_project_hash "$(path_hash "$project_path")"
+  tmux set-window-option -t "$target" -q @acp_hub_status "starting"
+  tmux set-window-option -t "$target" -q @acp_hub_status_glyph "◌"
+  tmux set-window-option -t "$target" -q @acp_hub_status_detail "$status_detail"
+  tmux set-window-option -t "$target" -q @acp_hub_mode ""
+  tmux set-window-option -t "$target" -q @acp_hub_model ""
+  tmux set-window-option -t "$target" -q @acp_hub_effort ""
   # Empty title → the tab falls back to the clean window name (#W) instead of a
   # placeholder; the UI fills in the real title and renames the window.
-  tmux set-window-option -t "$target" -q @vanzi_hub_title ""
+  tmux set-window-option -t "$target" -q @acp_hub_title ""
   refresh_status_line
 }
 
@@ -263,19 +263,19 @@ shell_quote() {
 }
 
 popup_width() {
-  tmux_option @vanzi_hub_popup_width "90%"
+  tmux_option @acp_hub_popup_width "90%"
 }
 
 popup_height() {
-  tmux_option @vanzi_hub_popup_height "85%"
+  tmux_option @acp_hub_popup_height "85%"
 }
 
 node_bin() {
-  tmux_option @vanzi_hub_node "node"
+  tmux_option @acp_hub_node "node"
 }
 
 default_agent() {
-  tmux_option @vanzi_hub_default_agent "codex"
+  tmux_option @acp_hub_default_agent "codex"
 }
 
 set_workspace_metadata() {
@@ -284,11 +284,11 @@ set_workspace_metadata() {
   parent_client="$3"
   parent_pane="$4"
 
-  tmux set-option -t "$session" -q @vanzi_hub_project_path "$project_path"
-  tmux set-option -t "$session" -q @vanzi_hub_project_name "$(basename "$project_path")"
-  tmux set-option -t "$session" -q @vanzi_hub_project_hash "$(path_hash "$project_path")"
-  tmux set-option -t "$session" -q @vanzi_hub_parent_client "$parent_client"
-  tmux set-option -t "$session" -q @vanzi_hub_parent_pane "$parent_pane"
+  tmux set-option -t "$session" -q @acp_hub_project_path "$project_path"
+  tmux set-option -t "$session" -q @acp_hub_project_name "$(basename "$project_path")"
+  tmux set-option -t "$session" -q @acp_hub_project_hash "$(path_hash "$project_path")"
+  tmux set-option -t "$session" -q @acp_hub_parent_client "$parent_client"
+  tmux set-option -t "$session" -q @acp_hub_parent_pane "$parent_pane"
 
   apply_acp_status_format "$session"
 }
@@ -305,16 +305,16 @@ apply_acp_status_format() {
   # when the chat needs attention (busy/permission/auth/error) — idle is quiet.
   # Codex = characteristic blue, Claude = characteristic orange; unknown falls
   # back to blue. Applied to the icon on inactive tabs only.
-  acp_provider_style="#{?#{==:#{@vanzi_hub_provider},claude},#[fg=colour173],#{?#{==:#{@vanzi_hub_provider},codex},#[fg=colour39],#[fg=colour39]}}"
-  acp_icon="#{?#{@vanzi_hub_provider_icon},#{@vanzi_hub_provider_icon},#{@vanzi_hub_provider_short}}"
+  acp_provider_style="#{?#{==:#{@acp_hub_provider},claude},#[fg=colour173],#{?#{==:#{@acp_hub_provider},codex},#[fg=colour39],#[fg=colour39]}}"
+  acp_icon="#{?#{@acp_hub_provider_icon},#{@acp_hub_provider_icon},#{@acp_hub_provider_short}}"
   acp_attention_states="responding|thinking|working|planning|starting|cancelling|permission|auth|error"
   # Inactive tabs: semantic hue for the attention glyph (dark bg reads it fine).
-  acp_attention="#{?#{m/r:^($acp_attention_states)$,#{@vanzi_hub_status}}, #{?#{==:#{@vanzi_hub_status},error},#[fg=red],#{?#{m/r:^(permission|auth)$,#{@vanzi_hub_status}},#[fg=yellow],#[fg=cyan]}}#{@vanzi_hub_status_glyph}#[default],}"
+  acp_attention="#{?#{m/r:^($acp_attention_states)$,#{@acp_hub_status}}, #{?#{==:#{@acp_hub_status},error},#[fg=red],#{?#{m/r:^(permission|auth)$,#{@acp_hub_status}},#[fg=yellow],#[fg=cyan]}}#{@acp_hub_status_glyph}#[default],}"
   # Active tab: the glyph inherits the current-style (black on the accent bar)
   # like the icon and title; its shape (◐ ⏸ ⊘ ✗) already carries the state, so
   # a semantic tint would only cost contrast on the punk background.
-  acp_attention_active="#{?#{m/r:^($acp_attention_states)$,#{@vanzi_hub_status}}, #{@vanzi_hub_status_glyph},}"
-  acp_title="#{?#{@vanzi_hub_title},#{@vanzi_hub_title},#W}"
+  acp_attention_active="#{?#{m/r:^($acp_attention_states)$,#{@acp_hub_status}}, #{@acp_hub_status_glyph},}"
+  acp_title="#{?#{@acp_hub_title},#{@acp_hub_title},#W}"
   # Inactive: provider-colored icon. Active (current): the icon inherits the
   # window-status-current-style so it reads black like the title on the accent
   # background, instead of a low-contrast provider tint.

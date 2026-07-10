@@ -7,11 +7,11 @@ process.stdout.isTTY = true;
 process.stdout.columns = 100;
 process.stdout.rows = 30;
 // The composer accent falls back to the provider color only when no
-// @vanzi_hub_accent tmux option is readable; drop TMUX so a developer's own
+// @acp_hub_accent tmux option is readable; drop TMUX so a developer's own
 // theme cannot leak into the assertions.
 delete process.env.TMUX;
 
-const { PopupUi } = await import("../bin/vanzi-hub.mjs");
+const { PopupUi } = await import("../bin/acp-hub.mjs");
 
 const strip = (value) => String(value).replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "");
 
@@ -73,9 +73,9 @@ const session = (line = "") => ({ pinned: true, line, cursor: line.length });
 }
 {
   const ui = makeUi();
-  process.env.VANZI_HUB_COMPOSER_BOX = "0";
+  process.env.ACP_HUB_COMPOSER_BOX = "0";
   assert.equal(ui.rawInputLayout(session("")).boxed, false, "env kill-switch works");
-  delete process.env.VANZI_HUB_COMPOSER_BOX;
+  delete process.env.ACP_HUB_COMPOSER_BOX;
 }
 
 // --- Multiline growth + overflow counters ---------------------------------------

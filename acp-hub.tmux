@@ -10,16 +10,16 @@ set_default() {
   tmux set-option -gq "$option" "$value"
 }
 
-set_default @vanzi_hub_popup_width "90%"
-set_default @vanzi_hub_popup_height "85%"
-set_default @vanzi_hub_legacy_keys "on"
-set_default @vanzi_hub_workspace_session "vanzi-hub"
-set_default @vanzi_hub_workspace_scope "project"
-set_default @vanzi_hub_session_prefix "vz"
-set_default @vanzi_hub_hash_length "8"
-set_default @vanzi_hub_node "node"
+set_default @acp_hub_popup_width "90%"
+set_default @acp_hub_popup_height "85%"
+set_default @acp_hub_legacy_keys "on"
+set_default @acp_hub_workspace_session "acp-hub"
+set_default @acp_hub_workspace_scope "project"
+set_default @acp_hub_session_prefix "acp"
+set_default @acp_hub_hash_length "8"
+set_default @acp_hub_node "node"
 
-tmux set-option -gq @vanzi_hub_dir "$CURRENT_DIR"
+tmux set-option -gq @acp_hub_dir "$CURRENT_DIR"
 
 tmux unbind-key -q m
 tmux unbind-key -q s
@@ -30,7 +30,7 @@ tmux bind-key m run-shell "sh \"$CURRENT_DIR/scripts/workspace.sh\" \"#{pane_cur
 tmux bind-key y run-shell "sh \"$CURRENT_DIR/scripts/tmux-menu.sh\" \"#{pane_current_path}\" \"#{session_name}\" \"#{client_name}\" \"#{pane_id}\""
 tmux bind-key M run-shell "sh \"$CURRENT_DIR/scripts/workspace.sh\" \"#{pane_current_path}\" \"#{session_name}\" \"#{client_name}\" \"#{pane_id}\" '' '' menu"
 
-if [ "$(tmux show-option -gqv @vanzi_hub_legacy_keys)" = "on" ]; then
+if [ "$(tmux show-option -gqv @acp_hub_legacy_keys)" = "on" ]; then
   # 9/0 always create a fresh chat (predictable with many chats around);
   # (/) focus the most recent existing chat for the provider.
   tmux unbind-key -q 9
@@ -44,13 +44,13 @@ if [ "$(tmux show-option -gqv @vanzi_hub_legacy_keys)" = "on" ]; then
 fi
 
 # Outside the ACP popup this is the normal tmux session chooser. Inside a
-# vz-* popup workspace it becomes the ACP chat/window chooser with live status.
+# acp-* popup workspace it becomes the ACP chat/window chooser with live status.
 tmux bind-key s run-shell "sh \"$CURRENT_DIR/scripts/switcher.sh\" \"#{session_name}\" \"#{pane_id}\""
 
-SESSION_PREFIX="$(tmux show-option -gqv @vanzi_hub_session_prefix)"
-[ -n "$SESSION_PREFIX" ] || SESSION_PREFIX="vz"
-WORKSPACE_SESSION="$(tmux show-option -gqv @vanzi_hub_workspace_session)"
-[ -n "$WORKSPACE_SESSION" ] || WORKSPACE_SESSION="vanzi-hub"
+SESSION_PREFIX="$(tmux show-option -gqv @acp_hub_session_prefix)"
+[ -n "$SESSION_PREFIX" ] || SESSION_PREFIX="acp"
+WORKSPACE_SESSION="$(tmux show-option -gqv @acp_hub_workspace_session)"
+[ -n "$WORKSPACE_SESSION" ] || WORKSPACE_SESSION="acp-hub"
 ACP_MATCH="#{||:#{m/r:^${SESSION_PREFIX}-,#{session_name}},#{==:#{session_name},$WORKSPACE_SESSION}}"
 
 # Inside ACP workspaces prefix+, renames the CHAT (daemon title + status-bar

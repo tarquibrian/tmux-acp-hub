@@ -1,6 +1,6 @@
-# tmux-vanzi-hub
+# tmux-acp-hub
 
-Vanzi Hub — a persistent multi-agent hub for tmux. Run Codex, Claude Code, and
+ACP Hub — a persistent multi-agent hub for tmux. Run Codex, Claude Code, and
 any [Agent Client Protocol](https://agentclientprotocol.com) agent in tmux
 popups: chats live in a background daemon, survive popup and daemon restarts,
 and every list shows live status with a transcript preview.
@@ -12,7 +12,7 @@ and every list shows live status with a transcript preview.
   required).
 - **Zero dependencies** — pure Node + tmux; adapters are fetched on demand.
 
-![Vanzi Hub popup over Neovim: a Claude chat rendering a Markdown table, the
+![ACP Hub popup over Neovim: a Claude chat rendering a Markdown table, the
 half-box composer, and the tab bar showing a Codex and a Claude chat.](assets/screenshot.png)
 
 ## Contents
@@ -48,7 +48,7 @@ Each provider authenticates through its own CLI/account the first time
 (`/auth` inside a chat). Check your environment:
 
 ```sh
-node ~/.config/tmux/plugins/tmux-vanzi-hub/bin/vanzi-hub.mjs health
+node ~/.config/tmux/plugins/tmux-acp-hub/bin/acp-hub.mjs health
 ```
 
 ## Installation
@@ -56,18 +56,18 @@ node ~/.config/tmux/plugins/tmux-vanzi-hub/bin/vanzi-hub.mjs health
 With [TPM](https://github.com/tmux-plugins/tpm), add to `~/.tmux.conf`:
 
 ```tmux
-set -g @plugin 'tarquibrian/tmux-vanzi-hub'
+set -g @plugin 'tarquibrian/tmux-acp-hub'
 ```
 
 Then `prefix + I` to install. Manual install:
 
 ```sh
-git clone https://github.com/tarquibrian/tmux-vanzi-hub \
-  ~/.config/tmux/plugins/tmux-vanzi-hub
+git clone https://github.com/tarquibrian/tmux-acp-hub \
+  ~/.config/tmux/plugins/tmux-acp-hub
 ```
 
 ```tmux
-run '~/.config/tmux/plugins/tmux-vanzi-hub/vanzi-hub.tmux'
+run '~/.config/tmux/plugins/tmux-acp-hub/acp-hub.tmux'
 ```
 
 ## Authentication
@@ -83,7 +83,7 @@ need a paid plan** — an API key works too:
 
 Adapters inherit the daemon's environment, so an exported key just works. To
 scope a key to one agent, add an `env` block in
-`~/.config/tmux-vanzi-hub/agents.json`:
+`~/.config/tmux-acp-hub/agents.json`:
 
 ```json
 {
@@ -113,11 +113,11 @@ All bindings are under your tmux `prefix`.
 | `prefix + y` | Open the native tmux Command Center for the active chat. |
 | `prefix + 9` / `prefix + 0` | Create a new Codex / Claude chat for the project. |
 | `prefix + (` / `prefix + )` | Focus the most recent Codex / Claude chat for the project. |
-| `prefix + s` | Outside the popup: normal tmux sessions. Inside `vz-*`: the tree-style ACP chat selector (icon, title, status, last activity, model/effort) with a live preview pane. |
+| `prefix + s` | Outside the popup: normal tmux sessions. Inside `acp-*`: the tree-style ACP chat selector (icon, title, status, last activity, model/effort) with a live preview pane. |
 | `prefix + ,` | Inside a chat: rename the **chat** (title + status-bar label). Outside: normal tmux window rename. |
 | `prefix + x` / `prefix + &` | Inside a chat: a close menu (close window / stop chat / delete / kill-pane). Outside: normal tmux kill confirmations. |
 
-Inside a `vz-*` workspace, `prefix + s` opens a tree-style selector of every ACP
+Inside a `acp-*` workspace, `prefix + s` opens a tree-style selector of every ACP
 chat across projects, with aligned columns (icon, title, status, last activity,
 mode, model) and a live preview:
 
@@ -148,7 +148,7 @@ Picking a chat focuses its window (or creates one); from a cold-start menu it
 loads the chat into that pane. When the popup is ≥ 96 columns wide, a preview
 pane on the right shows the highlighted chat's transcript tail — live and saved
 alike. Chats needing attention (permission/auth/error) sort to the top. Set
-`VANZI_HUB_INTERACTIVE_UI=0` for the old text menu.
+`ACP_HUB_INTERACTIVE_UI=0` for the old text menu.
 
 Inside a chat you can also reach the menu overlay with `←` on an empty composer
 or `Ctrl+O` (any input; your draft is kept and restored on `Esc`).
@@ -185,7 +185,7 @@ menu / interactive picker equivalent under `prefix + y`.
 `/model`, `/effort`, `/modes`, and `/access` open a compact numbered picker
 above the composer with the current value marked `●` — `1-9` picks directly,
 `↑↓`/`j`/`k` move, `Enter`/`l` applies, `Esc`/`h` cancels (tmux menus / text as
-fallback; `VANZI_HUB_INTERACTIVE_UI=0` forces them).
+fallback; `ACP_HUB_INTERACTIVE_UI=0` forces them).
 
 ### Prompt input
 
@@ -229,8 +229,8 @@ the adapter sends — ACP has no per-option preview or free-text channel.
 ## How it works
 
 The popup is only a client. A background daemon keeps ACP agent processes alive
-through `~/.cache/tmux-vanzi-hub/hub.sock`, so closing the popup does not kill
-the chat. The daemon also owns tmux window metadata (`@vanzi_hub_status` and
+through `~/.cache/tmux-acp-hub/hub.sock`, so closing the popup does not kill
+the chat. The daemon also owns tmux window metadata (`@acp_hub_status` and
 friends) and re-syncs the matching window on every chat change, so status
 glyphs in the status bar and the `prefix + s` switcher stay fresh even when no
 popup is attached.
@@ -247,7 +247,7 @@ tells you which variables to set before reopening.
 
 A chat is **not** a pane or a window: it lives in the background daemon (the ACP
 adapter process plus the transcript) and is persisted in the registry. Each
-tmux window inside the hidden `vz-*` workspace is only a **view** onto one chat,
+tmux window inside the hidden `acp-*` workspace is only a **view** onto one chat,
 and the pane inside it runs a disposable UI client.
 
 - Killing a pane or window closes the view; the chat keeps running and stays in
@@ -256,16 +256,16 @@ and the pane inside it runs a disposable UI client.
   it survives daemon restarts — restored chats replay even when the adapter
   can't reload history.
 - A chat window is named after its chat title (a clean provider label like
-  `Codex` until the title is known). **Identity is the `@vanzi_hub_chat_id`
+  `Codex` until the title is known). **Identity is the `@acp_hub_chat_id`
   window option, not the name** — `prefix + ,` renames the chat (title + window
   name together), never the internal id.
 - Splitting panes inside a chat window is plain tmux; extra panes are not chats.
 
-Workspaces are named `vz-<project>` (with a `-2`/`-3` suffix when two projects
-share a basename; the owning project is tracked in `@vanzi_hub_project_path`,
+Workspaces are named `acp-<project>` (with a `-2`/`-3` suffix when two projects
+share a basename; the owning project is tracked in `@acp_hub_project_path`,
 and legacy `acp-project-hash` sessions are reused while they live). They are
-hidden from the normal `prefix + s` chooser. Set `@vanzi_hub_workspace_scope` to
-`global` to restore the single `vanzi-hub` workspace mode.
+hidden from the normal `prefix + s` chooser. Set `@acp_hub_workspace_scope` to
+`global` to restore the single `acp-hub` workspace mode.
 
 In the status bar each window renders as a minimal label from chat metadata —
 the provider icon in its accent color (`❋` Claude, `⬡` Codex, `◆` others;
@@ -287,7 +287,7 @@ red for errors. Below it, a flat input, then a metadata footer such as
 cost segments appear on ACP `usage_update`). When the mode changes behavior, the
 divider shows compact badges (`[PLAN]`, `[READ-ONLY]`, `[FULL-ACCESS]`,
 `[ACCEPT-EDITS]`); extra roots show `+N roots`, MCP servers `+N mcp`. On popups
-shorter than 15 rows — or with `VANZI_HUB_COMPOSER_BOX=0` — it falls back to the
+shorter than 15 rows — or with `ACP_HUB_COMPOSER_BOX=0` — it falls back to the
 flat divider layout.
 
 **Editing.** Left/right, Home/End (`Ctrl+A`/`Ctrl+E`), `Ctrl+U`, `Ctrl+K`,
@@ -298,7 +298,7 @@ The composer grows to six rows (`↑ N more` / `↓ N more` counters beyond that
 the input into the kill ring (`Ctrl+Y`). `Ctrl+C` cancels an active turn and
 clears the input, else clears the input, else exits.
 
-**Vim mode.** `/vim` toggles modal editing (persisted; `VANZI_HUB_VIM=1` also
+**Vim mode.** `/vim` toggles modal editing (persisted; `ACP_HUB_VIM=1` also
 enables it). `Esc` then switches insert → normal instead of cancelling — with
 vim on, cancel a turn with `Ctrl+C`, or `Esc` while already in normal mode
 (a first `Esc` there clears any pending count/operator). Normal mode supports
@@ -348,8 +348,8 @@ down.
 
 Queueing: sending while a turn is active queues the prompt (`N queued` in the
 footer) and dispatches in order; `/cancel` drops the queue. Env kill-switches:
-`VANZI_HUB_PINNED_INPUT=0` (inline raw prompt), `VANZI_HUB_RAW_INPUT=0` (Node
-readline), `VANZI_HUB_BRACKETED_PASTE=0`.
+`ACP_HUB_PINNED_INPUT=0` (inline raw prompt), `ACP_HUB_RAW_INPUT=0` (Node
+readline), `ACP_HUB_BRACKETED_PASTE=0`.
 
 ### Markdown and tool rendering
 
@@ -374,7 +374,7 @@ pending) and skip identical repeats.
 
 ## Configuration
 
-Override providers in `~/.config/tmux-vanzi-hub/agents.json`, using the same
+Override providers in `~/.config/tmux-acp-hub/agents.json`, using the same
 shape as `agents.json` in this plugin.
 
 ### Adapters and model updates
@@ -394,8 +394,8 @@ Default adapters:
 - `codex`: `npx -y @zed-industries/codex-acp@0.16.0`
 - `claude`: `npx -y @agentclientprotocol/claude-agent-acp@0.57.0`
 
-`vanzi-hub.mjs health` prints the pinned versions. After changing a pin, restart
-the daemon (`vanzi-hub.mjs stop`).
+`acp-hub.mjs health` prints the pinned versions. After changing a pin, restart
+the daemon (`acp-hub.mjs stop`).
 
 ### Provider config defaults
 
@@ -452,40 +452,40 @@ Set with `set -g @option value` in `~/.tmux.conf`.
 
 | Option | Default | Purpose |
 |--------|---------|---------|
-| `@vanzi_hub_session_prefix` | `vz` | Workspace session prefix. |
-| `@vanzi_hub_popup_width` / `_height` | `90%` / `85%` | Popup size. |
-| `@vanzi_hub_accent` | provider accent | UI accent (`#rrggbb` or a 256-color number). |
-| `@vanzi_hub_default_agent` | `codex` | Provider for `prefix + m` cold starts. |
-| `@vanzi_hub_workspace_scope` | per-project | Set `global` for one shared workspace. |
-| `@vanzi_hub_node` | `node` | Node binary to launch the daemon/UI. |
+| `@acp_hub_session_prefix` | `acp` | Workspace session prefix. |
+| `@acp_hub_popup_width` / `_height` | `90%` / `85%` | Popup size. |
+| `@acp_hub_accent` | provider accent | UI accent (`#rrggbb` or a 256-color number). |
+| `@acp_hub_default_agent` | `codex` | Provider for `prefix + m` cold starts. |
+| `@acp_hub_workspace_scope` | per-project | Set `global` for one shared workspace. |
+| `@acp_hub_node` | `node` | Node binary to launch the daemon/UI. |
 
 ### Environment variables
 
 | Variable | Effect |
 |----------|--------|
-| `VANZI_HUB_INTERACTIVE_UI=0` | Use the old text menus instead of the pickers. |
-| `VANZI_HUB_COMPOSER_BOX=0` | Force the flat composer (no half-box). |
-| `VANZI_HUB_PINNED_INPUT=0` | Inline raw prompt instead of the pinned composer. |
-| `VANZI_HUB_RAW_INPUT=0` | Fall back to Node readline. |
-| `VANZI_HUB_BRACKETED_PASTE=0` | Disable bracketed paste. |
-| `VANZI_HUB_DEBUG_UI=1` | Show internal hub events (same as `/debug`). |
+| `ACP_HUB_INTERACTIVE_UI=0` | Use the old text menus instead of the pickers. |
+| `ACP_HUB_COMPOSER_BOX=0` | Force the flat composer (no half-box). |
+| `ACP_HUB_PINNED_INPUT=0` | Inline raw prompt instead of the pinned composer. |
+| `ACP_HUB_RAW_INPUT=0` | Fall back to Node readline. |
+| `ACP_HUB_BRACKETED_PASTE=0` | Disable bracketed paste. |
+| `ACP_HUB_DEBUG_UI=1` | Show internal hub events (same as `/debug`). |
 
 ## Privacy and state
 
 Chat transcripts (last 200 events per chat) are persisted in plain text in
-`~/.cache/tmux-vanzi-hub/registry.json` so chats survive restarts. Prompt drafts
+`~/.cache/tmux-acp-hub/registry.json` so chats survive restarts. Prompt drafts
 and input history live in `drafts.json` and `input-history.json` in the same
 directory; corrupt JSON is backed up as `.bad-*` and recreated.
 
 Delete a chat (`Ctrl+D` in any picker, or `/delete`) to remove its transcript,
-or wipe everything: `rm -rf ~/.cache/tmux-vanzi-hub`.
+or wipe everything: `rm -rf ~/.cache/tmux-acp-hub`.
 
 ## Troubleshooting
 
 If the daemon state looks stale after heavy changes:
 
 ```sh
-node ~/.config/tmux/plugins/tmux-vanzi-hub/bin/vanzi-hub.mjs stop
+node ~/.config/tmux/plugins/tmux-acp-hub/bin/acp-hub.mjs stop
 ```
 
 Then reopen with `prefix + m` or a provider key. `/debug` temporarily prints hub

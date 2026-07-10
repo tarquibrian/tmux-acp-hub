@@ -9,7 +9,7 @@ process.stdout.isTTY = true;
 process.stdout.columns = 100;
 process.stdout.rows = 30;
 
-const { PopupUi } = await import("../bin/vanzi-hub.mjs");
+const { PopupUi } = await import("../bin/acp-hub.mjs");
 
 const strip = (value) => String(value).replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "");
 

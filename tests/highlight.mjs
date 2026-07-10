@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 process.stdout.isTTY = true;
 delete process.env.TMUX;
 
-const { highlightCode } = await import("../bin/vanzi-hub.mjs");
+const { highlightCode } = await import("../bin/acp-hub.mjs");
 
 const KEYWORD = "\x1b[38;5;176m";
 const STRING = "\x1b[38;5;114m";

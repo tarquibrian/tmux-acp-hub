@@ -8,7 +8,7 @@ import {
   pickerNextIndex,
   formatRelativeAge,
   formatChatPreview,
-} from "../bin/vanzi-hub.mjs";
+} from "../bin/acp-hub.mjs";
 
 const strip = (value) => String(value).replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "");
 

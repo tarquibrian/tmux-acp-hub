@@ -1,4 +1,4 @@
-# tmux-vanzi-hub · Visual Design System
+# tmux-acp-hub · Visual Design System
 
 Decisions locked 2026-07-02 (composer restyled to half-box 2026-07-03): **hybrid layout** (half-box composer, flat transcript)
 with **provider-tinted accents** overridden by semantic state colors.
@@ -14,7 +14,7 @@ with **provider-tinted accents** overridden by semantic state colors.
 3. **One vocabulary** — every glyph, color, and spacing rule comes from the
    tokens below. No raw color codes or ad-hoc glyphs at call sites.
 4. **Degrade gracefully** — every styled surface has a plain fallback: small
-   popups drop the box, non-TTY drops color, `VANZI_HUB_INTERACTIVE_UI=0` keeps
+   popups drop the box, non-TTY drops color, `ACP_HUB_INTERACTIVE_UI=0` keeps
    the legacy flows.
 
 ## Audit — current inconsistencies this system replaces
@@ -168,7 +168,7 @@ and closer to the flat transcript).
 | **V2** | Autocomplete dropdown (slash + `@file`) with selection cycling | medium |
 | **V3** | Transcript blocks: user rail, plan/permission/error/activity/header restyle | medium |
 | **V4** | Label grammar normalization (pickers + tmux surfaces) + token extraction into one module | small |
-| **V5** | Optional theming: `@vanzi_hub_color_*` tmux options override tokens | small, later |
+| **V5** | Optional theming: `@acp_hub_color_*` tmux options override tokens | small, later |
 
 Implementation anchors: composer = `rawInputLayout` / `renderPinnedRawInput` /
 `inputHint`; dropdown = new state in `handleRawKeypress` + paint in

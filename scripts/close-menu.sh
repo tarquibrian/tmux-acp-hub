@@ -7,4 +7,4 @@ set -eu
 CURRENT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 . "$CURRENT_DIR/scripts/lib.sh"
 
-exec "$(node_bin)" "$CURRENT_DIR/bin/vanzi-hub.mjs" tmux-close-menu --pane "${1:-}"
+exec "$(node_bin)" "$CURRENT_DIR/bin/acp-hub.mjs" tmux-close-menu --pane "${1:-}"

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// tmux-vanzi-hub CLI: subcommands, tmux menus/panels, and the entry point.
+// tmux-acp-hub CLI: subcommands, tmux menus/panels, and the entry point.
 import crypto from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
@@ -124,7 +124,7 @@ async function ensureDaemon() {
   }
 
   throw new Error(
-    `Could not start Vanzi hub daemon: ${lastError?.message || "unknown error"}. Log: ${LOG_PATH}`,
+    `Could not start ACP hub daemon: ${lastError?.message || "unknown error"}. Log: ${LOG_PATH}`,
   );
 }
 
@@ -173,7 +173,7 @@ async function runTmuxMenu(args) {
   const chats = allChats.slice(0, 20);
   hub.close();
   const acpPane = isAcpPane(context);
-  const currentChatId = acpPane ? tmuxPaneFormat(context.pane, "#{@vanzi_hub_chat_id}") : "";
+  const currentChatId = acpPane ? tmuxPaneFormat(context.pane, "#{@acp_hub_chat_id}") : "";
   const items = [];
 
   const add = (label, key, command) => {
@@ -227,7 +227,7 @@ async function runTmuxMenu(args) {
     }
   }
 
-  const result = displayTmuxMenu(`Vanzi Hub: ${projectName(cwd)}`, items, context);
+  const result = displayTmuxMenu(`ACP Hub: ${projectName(cwd)}`, items, context);
   if (!result.ok) {
     console.error(result.error || "tmux display-menu failed");
     process.exitCode = 1;
@@ -305,7 +305,7 @@ async function runTmuxToggleMenu(args) {
     }
   }
 
-  const result = displayTmuxMenu(`Vanzi Hub: ${projectName(cwd)}`, items, context);
+  const result = displayTmuxMenu(`ACP Hub: ${projectName(cwd)}`, items, context);
   if (!result.ok) {
     // Menu failed (odd tmux state): degrade to direct creation.
     process.stdout.write("create");
@@ -326,9 +326,9 @@ async function runTmuxCloseMenu(args) {
   };
   context.client = tmuxPaneFormat(context.pane, "#{client_name}") || "";
 
-  const chatId = tmuxPaneFormat(context.pane, "#{@vanzi_hub_chat_id}");
-  const title = tmuxPaneFormat(context.pane, "#{@vanzi_hub_title}") || "ACP window";
-  const cwd = tmuxPaneFormat(context.pane, "#{@vanzi_hub_project_path}") || process.cwd();
+  const chatId = tmuxPaneFormat(context.pane, "#{@acp_hub_chat_id}");
+  const title = tmuxPaneFormat(context.pane, "#{@acp_hub_title}") || "ACP window";
+  const cwd = tmuxPaneFormat(context.pane, "#{@acp_hub_project_path}") || process.cwd();
 
   const items = [
     { label: "Close window · chat keeps running", key: "w", command: "kill-window" },
@@ -353,7 +353,7 @@ async function runTmuxCloseMenu(args) {
 
   const result = displayTmuxMenu(`Close · ${truncateText(cleanInline(title), 32)}`, items, context);
   if (!result.ok) {
-    tmuxDisplayMessage(context, `vanzi-hub: close menu failed: ${result.error || "unknown error"}`);
+    tmuxDisplayMessage(context, `acp-hub: close menu failed: ${result.error || "unknown error"}`);
     process.exitCode = 1;
   }
 }
@@ -376,7 +376,7 @@ async function runTmuxPanel(args) {
   const view = buildTmuxPanelView(panel, chat, context, cwd, { agents });
   const result = displayTmuxMenu(view.title, view.items, context);
   if (!result.ok) {
-    tmuxDisplayMessage(context, `vanzi-hub: tmux panel failed: ${result.error || "unknown error"}`);
+    tmuxDisplayMessage(context, `acp-hub: tmux panel failed: ${result.error || "unknown error"}`);
     process.exitCode = 1;
   }
 }
@@ -391,7 +391,7 @@ async function runTmuxAction(args) {
   context.client = tmuxPaneFormat(context.pane, "#{client_name}") || context.client;
 
   const action = String(args.action || "");
-  const chatId = args["chat-id"] || tmuxPaneFormat(context.pane, "#{@vanzi_hub_chat_id}");
+  const chatId = args["chat-id"] || tmuxPaneFormat(context.pane, "#{@acp_hub_chat_id}");
   const value = typeof args.value === "string" ? args.value.trim() : "";
   const hub = await ensureDaemon();
 
@@ -411,7 +411,7 @@ async function runTmuxAction(args) {
         syncTmuxChatMetadata(context, result.chat);
         tmuxDisplayMessage(
           context,
-          `vanzi-hub: ${result.configId || configId}=${valueLabel(result.value) || String(payload.value ?? "")}`,
+          `acp-hub: ${result.configId || configId}=${valueLabel(result.value) || String(payload.value ?? "")}`,
         );
         break;
       }
@@ -420,7 +420,7 @@ async function runTmuxAction(args) {
         if (!value) throw new Error("Mode is empty");
         const result = await hub.call("set_mode", { chatId, modeId: value });
         syncTmuxChatMetadata(context, result.chat);
-        tmuxDisplayMessage(context, `vanzi-hub: mode=${result.modeId || value}`);
+        tmuxDisplayMessage(context, `acp-hub: mode=${result.modeId || value}`);
         break;
       }
 
@@ -434,7 +434,7 @@ async function runTmuxAction(args) {
         let result;
         if (target.kind === "mode") {
           result = await hub.call("set_mode", { chatId, modeId: target.value });
-          tmuxDisplayMessage(context, `vanzi-hub: mode=${result.modeId || target.value}`);
+          tmuxDisplayMessage(context, `acp-hub: mode=${result.modeId || target.value}`);
         } else {
           result = await hub.call("set_config_option", {
             chatId,
@@ -443,7 +443,7 @@ async function runTmuxAction(args) {
           });
           tmuxDisplayMessage(
             context,
-            `vanzi-hub: ${result.configId || target.configId}=${valueLabel(result.value) || target.value}`,
+            `acp-hub: ${result.configId || target.configId}=${valueLabel(result.value) || target.value}`,
           );
         }
         syncTmuxChatMetadata(context, result.chat);
@@ -478,7 +478,7 @@ async function runTmuxAction(args) {
         const result = await hub.call("set_roots", { chatId, additionalDirectories: next });
         syncTmuxChatMetadata(context, result.chat);
         const suffix = result.requiresRestart ? " restart adapter to apply" : " saved";
-        tmuxDisplayMessage(context, `vanzi-hub: roots${suffix}`);
+        tmuxDisplayMessage(context, `acp-hub: roots${suffix}`);
         break;
       }
 
@@ -486,22 +486,22 @@ async function runTmuxAction(args) {
         if (!value) throw new Error("Auth method is empty");
         const result = await hub.call("authenticate", { chatId, methodId: value });
         syncTmuxChatMetadata(context, result.chat);
-        tmuxDisplayMessage(context, "vanzi-hub: authenticated");
+        tmuxDisplayMessage(context, "acp-hub: authenticated");
         break;
       }
 
       case "cancel":
         await hub.call("cancel", { chatId });
-        tmuxDisplayMessage(context, "vanzi-hub: cancel requested");
+        tmuxDisplayMessage(context, "acp-hub: cancel requested");
         break;
 
       case "close":
         if (context.pane && submitCommandToTmuxPane(context.pane, "/close")) {
-          tmuxDisplayMessage(context, "vanzi-hub: closing adapter");
+          tmuxDisplayMessage(context, "acp-hub: closing adapter");
           break;
         }
         await hub.call("close_chat", { chatId });
-        tmuxDisplayMessage(context, "vanzi-hub: adapter closed");
+        tmuxDisplayMessage(context, "acp-hub: adapter closed");
         break;
 
       case "delete": {
@@ -511,7 +511,7 @@ async function runTmuxAction(args) {
         if (context.pane) submitCommandToTmuxPane(context.pane, "/menu");
         tmuxDisplayMessage(
           context,
-          result.providerDeleted ? "vanzi-hub: chat deleted" : "vanzi-hub: chat removed locally",
+          result.providerDeleted ? "acp-hub: chat deleted" : "acp-hub: chat removed locally",
         );
         break;
       }
@@ -520,7 +520,7 @@ async function runTmuxAction(args) {
         throw new Error(`Unknown tmux action: ${action}`);
     }
   } catch (error) {
-    tmuxDisplayMessage(context, `vanzi-hub: ${error.message || String(error)}`);
+    tmuxDisplayMessage(context, `acp-hub: ${error.message || String(error)}`);
     process.exitCode = 1;
   } finally {
     hub.close();
@@ -528,8 +528,8 @@ async function runTmuxAction(args) {
 }
 
 function selectPanelChat(chats, context, args) {
-  const chatId = args["chat-id"] || tmuxPaneFormat(context.pane, "#{@vanzi_hub_chat_id}");
-  const provider = tmuxPaneFormat(context.pane, "#{@vanzi_hub_provider}");
+  const chatId = args["chat-id"] || tmuxPaneFormat(context.pane, "#{@acp_hub_chat_id}");
+  const provider = tmuxPaneFormat(context.pane, "#{@acp_hub_provider}");
 
   return (
     chats.find((chat) => chat.id === chatId) ||
@@ -848,7 +848,7 @@ function buildActivityPanelItems(context) {
 async function runStatus() {
   const state = await readJsonIfExists(STATE_PATH);
   if (!state) {
-    console.log("Vanzi hub has no state yet");
+    console.log("ACP hub has no state yet");
     return;
   }
 
@@ -951,7 +951,7 @@ async function runStop() {
   const hub = await connectHub(1000);
   await hub.call("shutdown");
   hub.close();
-  console.log("Vanzi hub daemon stopped");
+  console.log("ACP hub daemon stopped");
 }
 
 async function runRenderMarkdown() {
@@ -969,7 +969,7 @@ function reportTmuxCommandFailure(args, error) {
     pane: typeof args.pane === "string" ? args.pane : "",
   };
   try {
-    tmuxDisplayMessage(context, `vanzi-hub: ${error.message || String(error)}`);
+    tmuxDisplayMessage(context, `acp-hub: ${error.message || String(error)}`);
   } catch {
     // Nothing left to report to.
   }

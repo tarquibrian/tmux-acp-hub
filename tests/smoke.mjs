@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 
 const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 const PLUGIN_DIR = path.resolve(TEST_DIR, "..");
-const HUB_BIN = path.join(PLUGIN_DIR, "bin", "vanzi-hub.mjs");
+const HUB_BIN = path.join(PLUGIN_DIR, "bin", "acp-hub.mjs");
 const FAKE_AGENT = path.join(TEST_DIR, "fake-acp-agent.mjs");
 
 class JsonSocketClient {
@@ -79,7 +79,7 @@ class JsonSocketClient {
   }
 }
 
-const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tmux-vanzi-hub-"));
+const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tmux-acp-hub-"));
 const hubHome = path.join(tmp, "hub");
 const socketPath = path.join(hubHome, "hub.sock");
 const configPath = path.join(tmp, "agents.json");
@@ -123,9 +123,9 @@ await fs.writeFile(
 
 const env = {
   ...process.env,
-  VANZI_HUB_HOME: hubHome,
-  VANZI_HUB_SOCKET: socketPath,
-  VANZI_HUB_CONFIG: configPath,
+  ACP_HUB_HOME: hubHome,
+  ACP_HUB_SOCKET: socketPath,
+  ACP_HUB_CONFIG: configPath,
   FAKE_EXPECT_CWD: projectPath,
   FAKE_EXTRA_DIR: extraPath,
 };
@@ -462,7 +462,7 @@ try {
     [
       "| File | What it does | Notes |",
       "|---|---|---|",
-      "| .gitignore | Ignores DS_Store, copilot, iterm2, tmux plugins except vanzi-hub, opencode runtime, avante state, lazygit and lazy-lock | Solid. vanzi-hub exception correct. |",
+      "| .gitignore | Ignores DS_Store, copilot, iterm2, tmux plugins except acp-hub, opencode runtime, avante state, lazygit and lazy-lock | Solid. acp-hub exception correct. |",
       "| blink-cmp.lua | blink.cmp config with rust fuzzy, LSP path buffer snippets sources, Tab accept, C-n/p nav, ghost text off, winblend from pumblend | Clean. Ghost text off intentional? |",
     ].join("\n"),
   );
@@ -615,7 +615,7 @@ try {
   await restartedHub.call("shutdown");
   restartedHub.close();
 
-  console.log("tmux-vanzi-hub smoke test passed");
+  console.log("tmux-acp-hub smoke test passed");
 } catch (error) {
   daemon.kill("SIGTERM");
   console.error(daemonLogs.join(""));
