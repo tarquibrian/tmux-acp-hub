@@ -49,5 +49,7 @@ if is_acp_session "$CURRENT_SESSION"; then
 fi
 
 prefix="$(tmux_option @acp_hub_session_prefix acp)"
-normal_session_filter="#{?#{m/r:^(agents|acp|$prefix)-,#{session_name}},0,1}"
+# Exclude every agent-hub session: this plugin (acp / configured prefix), the
+# pre-rename legacy vz-*, and the sibling cli-hub's agents-*.
+normal_session_filter="#{?#{m/r:^(agents|acp|vz|$prefix)-,#{session_name}},0,1}"
 tmux choose-tree -Zs -f "$normal_session_filter"
