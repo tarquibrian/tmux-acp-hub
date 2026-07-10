@@ -182,9 +182,10 @@ menu / interactive picker equivalent under `prefix + y`.
 | `/roots`, `/roots add\|remove\|clear <path>` | Show / edit extra workspace directories (applied on reopen). |
 | `/changes` (`/diff`) | Picker of the files edited in this chat (path + `+/-` counts); Enter expands the chosen file's git-style diff into the transcript. |
 
-`/model`, `/effort`, `/modes`, and `/access` open focused pickers over the
-transcript with the current value marked `●` (tmux menus / text as fallback;
-`VANZI_HUB_INTERACTIVE_UI=0` forces them).
+`/model`, `/effort`, `/modes`, and `/access` open a compact numbered picker
+above the composer with the current value marked `●` — `1-9` picks directly,
+`↑↓`/`j`/`k` move, `Enter`/`l` applies, `Esc`/`h` cancels (tmux menus / text as
+fallback; `VANZI_HUB_INTERACTIVE_UI=0` forces them).
 
 ### Prompt input
 
@@ -204,7 +205,8 @@ transcript with the current value marked `●` (tmux menus / text as fallback;
 Permission requests (including the plan-mode "ready to code?" approval): press
 `Enter` on an empty line — or `/allow` with no number — to open a compact
 numbered menu. Press the number (`1`–`9`) to pick instantly, or
-`Ctrl+N`/`Ctrl+P` (arrows, `j`/`k`) + `Enter`; `Esc` keeps it pending.
+`Ctrl+N`/`Ctrl+P` (arrows, `j`/`k`) + `Enter` or `l`; `Esc` or `h` keeps it
+pending.
 `/allow <n>` picks option `n` directly and `/deny` rejects. Options are whatever
 the adapter sends — ACP has no per-option preview or free-text channel.
 
@@ -292,8 +294,24 @@ flat divider layout.
 `Ctrl+W`, `Ctrl+Y`, `Alt+B`, `Alt+F`, Up/Down history, and `Ctrl+R` reverse
 search. Multiline with `Ctrl+J`, `Alt+J`, or `Alt+Enter`; plain `Enter` sends.
 The composer grows to six rows (`↑ N more` / `↓ N more` counters beyond that).
-Double `Esc` clears the input into the kill ring (`Ctrl+Y`). `Ctrl+C` cancels an
-active turn, else clears the input, else exits.
+`Esc` cancels an active turn (the draft is kept); otherwise double `Esc` clears
+the input into the kill ring (`Ctrl+Y`). `Ctrl+C` cancels an active turn and
+clears the input, else clears the input, else exits.
+
+**Vim mode.** `/vim` toggles modal editing (persisted; `VANZI_HUB_VIM=1` also
+enables it). `Esc` then switches insert → normal instead of cancelling — with
+vim on, cancel a turn with `Ctrl+C`, or `Esc` while already in normal mode
+(a first `Esc` there clears any pending count/operator). Normal mode supports
+counts (`3w`, `2dd`, `5x`), motions `h j k l`, `w b e`, `0 ^ $`, `gg G`,
+`f F t T <char>`, `%` (bracket match), operators `d c y` with those motions
+(`dd cc yy` linewise; `cw` = `ce` like vim), edits `x X r s S D C ~`, `p P`
+from the kill ring (shared with `Ctrl+Y`), stacked undo `u` and redo `U`,
+`.` repeats the last change (including the text typed by a `cw`/`C`/`s`),
+and `i a I A o O` re-enter insert. `v`/`V` open charwise/linewise visual mode
+(selection shown in reverse video): motions extend it, `o` swaps ends, and
+`d x c s y ~ p` act on it. Enter still submits from any mode; the footer
+shows `NORMAL`/`INSERT`/`VISUAL`/`V-LINE` plus pending keys (`NORMAL 2d`).
+Vim only applies to the main composer — nested prompts stay plain.
 
 **Modes and menu (empty composer).** `Tab`/`Shift+Tab` cycle the adapter's
 session modes (e.g. Claude `plan → default → acceptEdits`) — the hint shows the
@@ -308,14 +326,25 @@ classic unique-match completion.
 
 **Paste and attachments.** Bracketed paste is on, so pasted code/logs insert as
 one operation and internal newlines don't submit. Pasting file paths attaches
-those files (`[Image #N …]` chips above the input); very large text blocks are
-stored as temporary file attachments. `Enter` on an empty composer with pending
-attachments sends them; Backspace removes the last.
+those files; very large text blocks are stored as temporary file attachments.
+Each attachment drops an inline `[Image #N]` / `[File #N]` / `[Pasted #N +L
+lines]` token at the cursor so the prompt records where it belongs, and the
+pending set is listed in a grouped section under the input (`Images (2)` /
+`Attachments (3)` + chips). Backspace over a token deletes it whole and
+detaches the file; on an empty composer it removes the last attachment.
+`Enter` on an empty composer with pending attachments sends them.
 
-**Scrolling.** The transcript keeps the last 4000 lines: `PgUp`/`PgDn` scroll
-without leaving the input, a `[SCROLL]` badge (with `+N new`) shows when output
-arrives while scrolled, and `Esc` / submitting jumps to the live tail. `Ctrl+L`
-redraws from the buffer. Drafts and input history persist per chat.
+**Scrolling.** The internal scroll is the primary way to review the transcript
+— it re-renders from the buffer (last 4000 lines), so wrapping and colors stay
+correct at any position. `PgUp`/`PgDn` page without leaving the input, `Home`
+jumps to the top while scrolled, `End`/`Esc`/submitting return to the live
+tail. A `[SCROLL]` badge (with `+N new`) shows when output arrives while
+scrolled, and the hint row lists the keys. `Ctrl+L` redraws from the buffer.
+tmux copy-mode (`prefix+[`) and the mouse wheel still work but read tmux's own
+scrollback, which can hold stale frames from earlier repaints — prefer the
+internal scroll. Drafts and input history persist per chat; browsing history
+with `↑`/`↓` stashes your in-progress draft and restores it when you come back
+down.
 
 Queueing: sending while a turn is active queues the prompt (`N queued` in the
 footer) and dispatches in order; `/cancel` drops the queue. Env kill-switches:
@@ -363,7 +392,7 @@ plugin change:
 Default adapters:
 
 - `codex`: `npx -y @zed-industries/codex-acp@0.16.0`
-- `claude`: `npx -y @agentclientprotocol/claude-agent-acp@0.46.0`
+- `claude`: `npx -y @agentclientprotocol/claude-agent-acp@0.57.0`
 
 `vanzi-hub.mjs health` prints the pinned versions. After changing a pin, restart
 the daemon (`vanzi-hub.mjs stop`).
