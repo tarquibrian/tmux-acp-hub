@@ -480,6 +480,23 @@ directory; corrupt JSON is backed up as `.bad-*` and recreated.
 Delete a chat (`Ctrl+D` in any picker, or `/delete`) to remove its transcript,
 or wipe everything: `rm -rf ~/.cache/tmux-acp-hub`.
 
+## tmux-resurrect / continuum
+
+Your chats live in the daemon's registry (above), not in tmux, so they survive
+restarts on their own — [resurrect](https://github.com/tmux-plugins/tmux-resurrect)
+has nothing to add. But resurrect saves *every* session, and the hidden
+`acp-*` workspace sessions are only **views** onto daemon-owned chats. On
+restore they'd come back as hollow shells that duplicate what the daemon
+re-creates. If you use resurrect/continuum auto-save, exclude them with the
+bundled hook:
+
+```tmux
+set -g @resurrect-hook-post-save-all 'sh ~/.config/tmux/plugins/tmux-acp-hub/scripts/resurrect-exclude.sh'
+```
+
+It strips `acp-*` / `vz-*` (and a sibling cli-hub's `cli-*` / `agents-*`) from
+each save. Your chats are untouched — they were never in resurrect.
+
 ## Troubleshooting
 
 If the daemon state looks stale after heavy changes:
