@@ -146,4 +146,11 @@ const session = (line, cursor = line.length) => ({
   assert.ok(plain.footerRow !== null, "footer returns without the dropdown");
 }
 
+// The recovery command is discoverable from the composer.
+{
+  const ui = makeUi();
+  const names = ui.chatCommands().map((entry) => entry.name);
+  assert.ok(names.includes("/restart"), "/restart is in the command list");
+}
+
 console.log("autocomplete test passed");

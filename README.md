@@ -509,7 +509,7 @@ each save. Your chats are untouched — they were never in resurrect.
 ## Troubleshooting
 
 **Restart (keeps every chat).** If the popup misbehaves, the daemon hangs, or
-state looks stale:
+state looks stale — type `/restart` in any chat, or from a terminal:
 
 ```sh
 node ~/.config/tmux/plugins/tmux-acp-hub/bin/acp-hub.mjs restart
