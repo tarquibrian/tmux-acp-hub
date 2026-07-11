@@ -67,9 +67,13 @@ import {
   tmuxRunWorkspace,
   HUB_DIR,
   SOCKET_PATH,
+  PID_PATH,
   LOG_PATH,
   STATE_PATH,
   REGISTRY_PATH,
+  DRAFTS_PATH,
+  INPUT_HISTORY_PATH,
+  PASTES_DIR,
 } from "../lib/core.mjs";
 import {
   canConnectToSocket,
@@ -954,6 +958,160 @@ async function runStop() {
   console.log("ACP hub daemon stopped");
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Stop the daemon even when it is hung: graceful shutdown RPC first, then
+// SIGTERM/SIGKILL via the pid file. Returns how it went for the summary line.
+async function stopDaemonHard() {
+  try {
+    const hub = await connectHub(1000);
+    await hub.call("shutdown");
+    hub.close();
+    // Give it a beat to unlink its socket and pid file.
+    await sleep(300);
+    return "stopped";
+  } catch {
+    // No usable socket — a crashed or hung daemon. Fall through to signals.
+  }
+
+  let pid = 0;
+  try {
+    pid = Number(fs.readFileSync(PID_PATH, "utf8").trim());
+  } catch {
+    // No pid file: nothing to signal.
+  }
+
+  const alive = () => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  if (pid > 0 && alive()) {
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {
+      // Raced with its own exit.
+    }
+    for (let i = 0; i < 20 && alive(); i += 1) await sleep(100);
+    if (alive()) {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        // Already gone.
+      }
+    }
+    return "killed (was hung)";
+  }
+
+  return "was not running";
+}
+
+function removeRuntimeFiles() {
+  for (const file of [SOCKET_PATH, PID_PATH]) {
+    try {
+      fs.unlinkSync(file);
+    } catch {
+      // Already gone — the daemon cleans up after a graceful shutdown.
+    }
+  }
+}
+
+// Kill the hidden acp-* workspace tmux sessions. They are only views onto
+// daemon-owned chats; with the daemon down they are zombies that a reopened
+// popup would attach to. Guarded by the hub metadata option so an unrelated
+// session that merely shares the prefix is never touched.
+function killWorkspaceSessions() {
+  const list = spawnSync("tmux", ["list-sessions", "-F", "#{session_name}"], {
+    encoding: "utf8",
+  });
+  if (list.status !== 0) return 0;
+
+  const opt = spawnSync("tmux", ["show-option", "-gqv", "@acp_hub_session_prefix"], {
+    encoding: "utf8",
+  });
+  const prefix = (opt.stdout || "").trim() || "acp";
+
+  let killed = 0;
+  for (const name of (list.stdout || "").split("\n")) {
+    if (!name || !name.startsWith(`${prefix}-`)) continue;
+    const meta = spawnSync("tmux", ["show-option", "-t", name, "-qv", "@acp_hub_project_path"], {
+      encoding: "utf8",
+    });
+    if (!(meta.stdout || "").trim()) continue;
+    const result = spawnSync("tmux", ["kill-session", "-t", `=${name}`]);
+    if (result.status === 0) killed += 1;
+  }
+  return killed;
+}
+
+// Soft recovery: bounce the daemon and clear the tmux views. Chats survive —
+// they live in the registry, which the next daemon start reloads.
+async function runRestart() {
+  const how = await stopDaemonHard();
+  removeRuntimeFiles();
+  const killed = killWorkspaceSessions();
+
+  console.log(`daemon: ${how}`);
+  console.log(`workspace sessions closed: ${killed}`);
+  console.log(`chats kept in ${REGISTRY_PATH}`);
+  console.log("reopen with prefix+m — the daemon restarts on demand");
+}
+
+// Hard recovery: everything runRestart does, plus wiping all persisted chats
+// and composer state. The user config (agents.json) is never touched.
+async function runReset(args) {
+  let chatCount = 0;
+  try {
+    const registry = JSON.parse(fs.readFileSync(REGISTRY_PATH, "utf8"));
+    chatCount = Array.isArray(registry?.chats) ? registry.chats.length : 0;
+  } catch {
+    // Missing or corrupt registry — nothing countable to lose.
+  }
+
+  if (args.yes !== true) {
+    if (!process.stdin.isTTY) {
+      console.error("reset deletes ALL chats; run interactively or pass --yes");
+      process.exitCode = 2;
+      return;
+    }
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    const answer = await rl.question(
+      `Delete ALL acp-hub state (${chatCount} saved chat(s), drafts, history) from ${HUB_DIR}? [y/N] `,
+    );
+    rl.close();
+    if (!/^y(es)?$/i.test(answer.trim())) {
+      console.log("aborted — nothing deleted");
+      return;
+    }
+  }
+
+  const how = await stopDaemonHard();
+  removeRuntimeFiles();
+  const killed = killWorkspaceSessions();
+
+  for (const file of [REGISTRY_PATH, STATE_PATH, DRAFTS_PATH, INPUT_HISTORY_PATH, LOG_PATH]) {
+    try {
+      fs.unlinkSync(file);
+    } catch {
+      // Absent is fine.
+    }
+  }
+  try {
+    fs.rmSync(PASTES_DIR, { recursive: true, force: true });
+  } catch {
+    // Absent is fine.
+  }
+
+  console.log(`daemon: ${how}`);
+  console.log(`workspace sessions closed: ${killed}`);
+  console.log(`wiped ${chatCount} chat(s) and composer state from ${HUB_DIR}`);
+  console.log("agents.json (your config) was not touched");
+}
+
 async function runRenderMarkdown() {
   const input = fs.readFileSync(0, "utf8");
   const ui = Object.create(PopupUi.prototype);
@@ -1016,6 +1174,12 @@ async function main() {
       break;
     case "stop":
       await runStop();
+      break;
+    case "restart":
+      await runRestart();
+      break;
+    case "reset":
+      await runReset(args);
       break;
     case "_render-markdown":
       await runRenderMarkdown();

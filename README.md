@@ -499,14 +499,36 @@ each save. Your chats are untouched — they were never in resurrect.
 
 ## Troubleshooting
 
-If the daemon state looks stale after heavy changes:
+**Restart (keeps every chat).** If the popup misbehaves, the daemon hangs, or
+state looks stale:
 
 ```sh
-node ~/.config/tmux/plugins/tmux-acp-hub/bin/acp-hub.mjs stop
+node ~/.config/tmux/plugins/tmux-acp-hub/bin/acp-hub.mjs restart
 ```
 
-Then reopen with `prefix + m` or a provider key. `/debug` temporarily prints hub
-internals and long fallback details into the chat pane. Sanity checklist:
+It stops the daemon (gracefully if it answers, `SIGTERM`/`SIGKILL` via the pid
+file if it's hung), closes the hidden workspace tmux sessions — with the
+daemon down they're just dead views — and cleans up the socket. Nothing under
+`~/.cache/tmux-acp-hub` is deleted: reopen with `prefix + m` and a fresh
+daemon restores every chat from the registry.
+
+**Reset (deletes every chat).** To start from zero:
+
+```sh
+node ~/.config/tmux/plugins/tmux-acp-hub/bin/acp-hub.mjs reset
+```
+
+Same as `restart`, plus it wipes all persisted chats, drafts, input history,
+pastes, and the log. Asks for confirmation (pass `--yes` to skip, e.g. in
+scripts); your `agents.json` config is never touched.
+
+`stop` still exists for just stopping the daemon. Whenever the daemon goes
+away — `stop`, `restart`, a crash, or a `kill -9` — open popups notice the
+lost connection, print why, and close themselves; they no longer linger as
+unresponsive windows.
+
+`/debug` temporarily prints hub internals and long fallback details into the
+chat pane. Sanity checklist:
 
 - `prefix + m` opens/minimizes the project popup.
 - `prefix + y` opens the Command Center (config actions use tmux UI, not chat text).

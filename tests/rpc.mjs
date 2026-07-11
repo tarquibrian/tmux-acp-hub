@@ -46,4 +46,31 @@ function makeClient() {
   assert.equal(sent.length, 0, "no request is sent on a closed client");
 }
 
+// onClose handlers fire exactly once on socket loss — the UI relies on this
+// to exit instead of sitting deaf on a dead connection.
+{
+  const { client } = makeClient();
+  let fired = 0;
+  client.onClose(() => {
+    fired += 1;
+  });
+  client.handleClose();
+  client.handleClose();
+  assert.equal(fired, 1, "close handler fires exactly once");
+}
+
+// A throwing close handler doesn't stop the others.
+{
+  const { client } = makeClient();
+  let reached = false;
+  client.onClose(() => {
+    throw new Error("boom");
+  });
+  client.onClose(() => {
+    reached = true;
+  });
+  client.handleClose();
+  assert.equal(reached, true, "later close handlers still run");
+}
+
 console.log("rpc test passed");
