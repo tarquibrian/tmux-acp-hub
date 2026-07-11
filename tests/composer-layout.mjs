@@ -168,4 +168,38 @@ const session = (line = "") => ({ pinned: true, line, cursor: line.length });
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
+// --- Cancel-to-edit: cancelling a turn restores the just-sent prompt ---------------
+{
+  const ui = makeUi();
+  ui.currentChat.status = "responding";
+  ui.hub = { call: async () => ({ ok: true }) };
+  ui.notify = () => {};
+  ui.saveRawDraft = () => {};
+  ui.killRing = [];
+  ui.lastSentPrompt = { chatId: "c1", text: "arregla el bug del scroll" };
+
+  // Empty composer: Esc-cancel restores the sent prompt for editing.
+  ui.rawInput = { line: "", cursor: 0 };
+  assert.equal(ui.requestCancelCurrentTurn(), true);
+  assert.equal(ui.rawInput.line, "arregla el bug del scroll");
+  assert.equal(ui.rawInput.cursor, ui.rawInput.line.length);
+
+  // Composer already has NEW text: never overwritten by the restore.
+  ui.rawInput = { line: "otra cosa", cursor: 9 };
+  assert.equal(ui.requestCancelCurrentTurn(), true);
+  assert.equal(ui.rawInput.line, "otra cosa");
+
+  // Ctrl+C with text: clears it and skips the restore (explicit discard).
+  ui.rawInput = { line: "borrador nuevo", cursor: 14 };
+  assert.equal(ui.cancelCurrentTurnFromInput(ui.rawInput), true);
+  assert.equal(ui.rawInput.line, "", "Ctrl+C keeps the composer empty");
+  assert.ok(ui.killRing.includes("borrador nuevo"), "discarded text goes to the kill ring");
+
+  // Wrong chat: no restore.
+  ui.rawInput = { line: "", cursor: 0 };
+  ui.lastSentPrompt = { chatId: "other", text: "ajeno" };
+  assert.equal(ui.requestCancelCurrentTurn(), true);
+  assert.equal(ui.rawInput.line, "");
+}
+
 console.log("composer-layout test passed");

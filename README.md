@@ -294,9 +294,11 @@ flat divider layout.
 `Ctrl+W`, `Ctrl+Y`, `Alt+B`, `Alt+F`, Up/Down history, and `Ctrl+R` reverse
 search. Multiline with `Ctrl+J`, `Alt+J`, or `Alt+Enter`; plain `Enter` sends.
 The composer grows to six rows (`↑ N more` / `↓ N more` counters beyond that).
-`Esc` cancels an active turn (the draft is kept); otherwise double `Esc` clears
-the input into the kill ring (`Ctrl+Y`). `Ctrl+C` cancels an active turn and
-clears the input, else clears the input, else exits. `Ctrl+L` repaints the
+`Esc` cancels an active turn (the draft is kept) — and if the composer is
+empty, the just-sent prompt is restored into it, so "wait, one more thing" is
+cancel → tweak → Enter. Otherwise double `Esc` clears the input into the kill
+ring (`Ctrl+Y`). `Ctrl+C` cancels an active turn and clears the input, else
+clears the input, else exits. `Ctrl+L` repaints the
 whole screen. `Alt+E` opens the draft in `$VISUAL`/`$EDITOR` (blocking, in
 this pane) and reloads the buffer into the composer on exit — the natural way
 to write long prompts.
