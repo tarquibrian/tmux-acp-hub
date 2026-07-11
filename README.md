@@ -33,6 +33,7 @@ half-box composer, and the tab bar showing a Codex and a Claude chat.](assets/sc
   - [tmux options](#tmux-options)
   - [Environment variables](#environment-variables)
 - [Privacy and state](#privacy-and-state)
+- [tmux-resurrect / continuum](#tmux-resurrect--continuum)
 - [Troubleshooting](#troubleshooting)
 - [Tests](#tests)
 
@@ -186,8 +187,10 @@ menu / interactive picker equivalent under `prefix + y`.
 | `/changes` (`/diff`) | Picker of the files edited in this chat (path + `+/-` counts); Enter expands the chosen file's git-style diff into the transcript. |
 
 `/model`, `/effort`, `/modes`, and `/access` open a compact numbered picker
-above the composer with the current value marked `●` — `1-9` picks directly,
-`↑↓`/`j`/`k` move, `Enter`/`l` applies, `Esc`/`h` cancels (tmux menus / text as
+inline **below the input** (the same zone as the command autocomplete), with
+the current value marked `●` and the composer and transcript still on screen —
+`1-9` picks directly, `↑↓`/`Tab` move, `Enter` applies, `Esc` closes, and any
+other key dismisses the list and types normally (tmux menus / text as
 fallback; `ACP_HUB_INTERACTIVE_UI=0` forces them).
 
 ### Prompt input
