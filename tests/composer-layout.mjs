@@ -133,4 +133,39 @@ const session = (line = "") => ({ pinned: true, line, cursor: line.length });
   assert.equal(ui.composerBorderSeq(), "\x1b[31m", "error turns the border red");
 }
 
+// --- Draft token estimate ---------------------------------------------------------
+{
+  const { estimateDraftTokens, formatTokenEstimate } = await import("../lib/core.mjs");
+  // Text only: ~4 chars/token, ceil.
+  assert.equal(estimateDraftTokens("abcdefgh"), 2);
+  assert.equal(estimateDraftTokens(""), 0);
+  // File attachments count by size; images at a flat cost.
+  assert.equal(estimateDraftTokens("", [{ kind: "file", size: 4000 }]), 1000);
+  assert.equal(estimateDraftTokens("", [{ kind: "image", size: 999999 }]), 1500);
+  // Formatting: plain under 1k, one decimal to 10k, whole k after.
+  assert.equal(formatTokenEstimate(0), "");
+  assert.equal(formatTokenEstimate(950), "~950 tok");
+  assert.equal(formatTokenEstimate(1500), "~1.5k tok");
+  assert.equal(formatTokenEstimate(32000), "~32k tok");
+}
+
+// The composer label resolves @file mentions through fs.stat and includes
+// their size in the estimate.
+{
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "acp-tok-"));
+  fs.writeFileSync(path.join(dir, "notes.txt"), "x".repeat(8000));
+
+  const ui = makeUi();
+  ui.cwd = dir;
+  ui.currentChat.cwd = dir;
+  ui.rawInput = { line: "revisa @notes.txt por favor", cursor: 0 };
+  const label = ui.composerDraftTokenLabel();
+  // ~27 chars of text (7 tok) + 8000 bytes (2000 tok) ≈ 2.0k
+  assert.ok(label.includes("~2.0k tok"), `mention size included (got: ${label})`);
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
 console.log("composer-layout test passed");

@@ -296,7 +296,16 @@ search. Multiline with `Ctrl+J`, `Alt+J`, or `Alt+Enter`; plain `Enter` sends.
 The composer grows to six rows (`↑ N more` / `↓ N more` counters beyond that).
 `Esc` cancels an active turn (the draft is kept); otherwise double `Esc` clears
 the input into the kill ring (`Ctrl+Y`). `Ctrl+C` cancels an active turn and
-clears the input, else clears the input, else exits.
+clears the input, else clears the input, else exits. `Ctrl+L` repaints the
+whole screen. `Alt+E` opens the draft in `$VISUAL`/`$EDITOR` (blocking, in
+this pane) and reloads the buffer into the composer on exit — the natural way
+to write long prompts.
+
+**Draft cost.** While you type, the footer shows an estimated token count for
+the draft (`~1.5k tok`): composer text at ~4 chars/token, pending attachments
+by size (images at a flat estimate), and `@file` mentions resolved via
+`fs.stat` — file *sizes* are read, never contents. It's a local
+order-of-magnitude signal, not an API count; it turns yellow past 32k.
 
 **Vim mode.** `/vim` toggles modal editing (persisted; `ACP_HUB_VIM=1` also
 enables it). `Esc` then switches insert → normal instead of cancelling — with

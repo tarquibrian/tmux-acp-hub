@@ -66,6 +66,25 @@ const press = (ui, session, ch) => ui.handleVimKeypress(session, ch, key(ch.leng
   assert.equal(s.cursor, 9);
 }
 
+// A REAL terminal ESC arrives as {name:"escape", meta:true} (readline treats
+// ESC as the meta prefix). It must still enter normal mode — bouncing on
+// key.meta left vim permanently stuck in insert.
+{
+  const ui = makeUi();
+  const s = makeSession("hola mundo");
+  assert.equal(ui.handleVimKeypress(s, "", key("escape", { meta: true })), true);
+  assert.equal(s.vimMode, "normal");
+}
+
+// Alt+<letter> chords (meta with a non-escape name) stay global even with vim
+// on: Alt+J newline, Alt+B word-jump etc. must reach the default handler.
+{
+  const ui = makeUi();
+  const s = makeSession("hola");
+  s.vimMode = "normal";
+  assert.equal(ui.handleVimKeypress(s, "j", key("j", { meta: true })), false);
+}
+
 // Insert mode passes ordinary keys through to the default handler.
 {
   const ui = makeUi();
