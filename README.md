@@ -126,19 +126,22 @@ mode and model columns.](assets/switcher.png)
 
 ### The `prefix + M` menu
 
-An interactive list of every chat, with New-chat rows per provider:
+An interactive list of every chat, with New-chat rows per provider. It opens
+with the chat you were just in preselected (not the top of the list), and
+navigation comes first — typing doesn't filter until you ask for it:
 
 | In the menu | Does |
 |-------------|------|
-| type | filter fzf-style |
-| `↑`/`↓` or `Ctrl+N`/`Ctrl+P` | move |
-| `Enter` | open the chat, or create one from a `New … chat` row |
+| `j`/`k`, `↑`/`↓`, `Ctrl+N`/`Ctrl+P` | move (`g`/`G` first/last) |
+| `Enter` / `l` | open the chat, or create one from a `New … chat` row |
+| `/` | filter mode — type to narrow fzf-style, `Esc` back to the list (query kept) |
+| `h` | back out (clear filter first, then close) |
 | `Tab` | toggle project / all-projects scope |
 | `Ctrl+S` | send a one-line reply to a live chat without leaving the list (idle → starts a turn, busy → queues; preview refreshes) |
 | `Ctrl+E` | rename the highlighted chat inline |
 | `Ctrl+D` (twice) | delete permanently; closes its tab if open |
 | `Ctrl+R` | re-import provider sessions |
-| `Esc` | clear the filter, then close the overlay (back to your chat, or minimize) |
+| `Esc` | leave filter mode, then clear the filter, then close the overlay |
 
 ![The menu overlay: a filterable chat list on the left with per-chat status,
 age, mode and model, and a live transcript preview of the highlighted chat on
