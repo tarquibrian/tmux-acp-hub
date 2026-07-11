@@ -284,6 +284,9 @@ try {
   const resubscribe = await hub.call("subscribe", { chatId: chat.id });
   assert.ok(resubscribe.pendingPermission, "subscribe should surface the pending permission");
   assert.equal(resubscribe.pendingPermission.permissionId, permEvent.permissionId);
+  // The manual rename is pinned: sending a prompt must NOT replace it with the
+  // per-prompt provisional title.
+  assert.equal(resubscribe.chat.title, `Bob's "fake" chat`, "pinned title survives prompts");
 
   // promptQueueing: a prompt sent while the turn is still active is queued, not
   // rejected; cancelling the turn drops the queued prompts.
@@ -583,6 +586,22 @@ try {
   });
   assert.equal(listedFiltered.chats.length, 1);
   assert.equal(listedFiltered.chats[0].sessionId, "listed-session");
+
+  // Provisional title: on an un-renamed chat, sending a prompt immediately
+  // retitles it from that prompt (first line, clipped) so the tmux tab shows
+  // the CURRENT entry instead of lagging one behind until the adapter's own
+  // session_info_update arrives.
+  const titled = await hub.call("new_chat", { provider: "fake", cwd: projectPath });
+  const longLine = `necesito ayuda con ${"x".repeat(80)}\nsegunda linea ignorada`;
+  await hub.call("send_prompt", { chatId: titled.id, text: longLine });
+  const titledState = await hub.call("subscribe", { chatId: titled.id });
+  assert.ok(
+    titledState.chat.title.startsWith("necesito ayuda con"),
+    `provisional title from prompt (got: ${titledState.chat.title})`,
+  );
+  assert.ok(!titledState.chat.title.includes("segunda"), "only the first line is used");
+  assert.ok(titledState.chat.title.length <= 75, "provisional title is clipped");
+  await hub.call("delete_chat", { chatId: titled.id });
 
   // session/delete (capability-gated), live-peer path: a fresh active chat is
   // deleted through its running adapter and removed from the registry.
