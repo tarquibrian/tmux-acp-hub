@@ -202,4 +202,63 @@ const session = (line = "") => ({ pinned: true, line, cursor: line.length });
   assert.equal(ui.rawInput.line, "");
 }
 
+// --- Inline picker (/model etc.) lives in the dropdown zone ------------------------
+{
+  const ui = makeUi();
+  ui.hub = { call: async () => ({ ok: true }) };
+  ui.notify = () => {};
+  ui.saveRawDraft = () => {};
+  let applied = null;
+  ui.currentChat.configOptions = [
+    {
+      id: "model",
+      name: "Model",
+      currentValue: "gpt-5.4",
+      options: [
+        { value: "gpt-5.5", label: "GPT-5.5" },
+        { value: "gpt-5.4", label: "GPT-5.4" },
+        { value: "gpt-5.4-mini", label: "GPT-5.4-Mini" },
+      ],
+    },
+  ];
+  ui.applyConfigOption = async (id, value) => {
+    applied = { id, value };
+  };
+
+  const session = { line: "/model", cursor: 6, pinned: true, draftKey: "chat:c1" };
+  ui.rawInput = session;
+  ui.renderRawInput = () => {};
+
+  // Enter on "/model" opens the inline picker instead of resolving the prompt.
+  assert.equal(ui.maybeOpenInlinePicker(session), true);
+  assert.ok(ui.inlinePicker, "picker state set");
+  assert.equal(session.line, "", "input cleared, composer stays live");
+  assert.equal(ui.inlinePicker.index, 1, "selection starts on the current value");
+
+  // Layout: the list takes the dropdown zone below the input (items + title).
+  const layout = ui.rawInputLayout(session);
+  assert.equal(layout.dropdownRows, 4, "3 items + title row");
+  assert.ok(layout.dropdownRow > layout.inputRow, "list renders below the input");
+  assert.equal(layout.footerRow, null, "footer yields to the list");
+
+  // Keys: navigation, number-pick, esc.
+  ui.handleInlinePickerKey(session, "", { name: "down" });
+  assert.equal(ui.inlinePicker.index, 2);
+  ui.handleInlinePickerKey(session, "", { name: "up" });
+  assert.equal(ui.inlinePicker.index, 1);
+  assert.equal(ui.handleInlinePickerKey(session, "1", { name: "1" }), true);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(applied, { id: "model", value: "gpt-5.5" }, "number applies that option");
+  assert.equal(ui.inlinePicker, null, "picker closes after apply");
+
+  // Esc closes without applying; a printable key closes and falls through.
+  assert.equal(ui.maybeOpenInlinePicker({ ...session, line: "/model" }), true);
+  ui.rawInput.line = "";
+  assert.equal(ui.handleInlinePickerKey(ui.rawInput, "", { name: "escape" }), true);
+  assert.equal(ui.inlinePicker, null);
+  assert.equal(ui.maybeOpenInlinePicker({ ...session, line: "/model" }), true);
+  assert.equal(ui.handleInlinePickerKey(ui.rawInput, "x", { name: "x" }), false, "typing falls through");
+  assert.equal(ui.inlinePicker, null, "typing closes the list");
+}
+
 console.log("composer-layout test passed");
