@@ -26,9 +26,13 @@ case "$target" in
 esac
 [ -f "$file" ] || exit 0
 
-# Drop the pane/window records whose session is an agent-hub session. State and
+# Drop the pane/window records whose session is an agent-hub session — the
+# canonical prefixes plus whatever @acp_hub_session_prefix is set to. State and
 # other records that reference a removed session are harmless — resurrect skips
 # sessions it can't recreate.
+prefix="$(tmux show-option -gqv @acp_hub_session_prefix 2>/dev/null)"
+[ -n "$prefix" ] || prefix="acp"
+
 tmp="$file.agents.$$"
-awk -F'\t' '!(($1 == "pane" || $1 == "window") && $2 ~ /^(cli|agents|acp|vz)-/)' "$file" > "$tmp" 2>/dev/null &&
+awk -F'\t' -v p="$prefix" '!(($1 == "pane" || $1 == "window") && $2 ~ ("^(" p "|cli|agents|acp|vz)-"))' "$file" > "$tmp" 2>/dev/null &&
   mv "$tmp" "$file"
