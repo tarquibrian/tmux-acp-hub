@@ -186,12 +186,15 @@ menu / interactive picker equivalent under `prefix + y`.
 | `/roots`, `/roots add\|remove\|clear <path>` | Show / edit extra workspace directories (applied on reopen). |
 | `/changes` (`/diff`) | Picker of the files edited in this chat (path + `+/-` counts); Enter expands the chosen file's git-style diff into the transcript. |
 
-`/model`, `/effort`, `/modes`, and `/access` open a compact numbered picker
+`/model`, `/effort`, `/mode(s)`, and `/access` open a compact numbered picker
 inline **below the input** (the same zone as the command autocomplete), with
-the current value marked `●` and the composer and transcript still on screen —
-`1-9` picks directly, `↑↓`/`Tab` move, `Enter` applies, `Esc` closes, and any
-other key dismisses the list and types normally (tmux menus / text as
-fallback; `ACP_HUB_INTERACTIVE_UI=0` forces them).
+the current value marked `●` and the composer and transcript still on screen.
+While it's open the picker owns the keyboard: `j`/`k`/`↑`/`↓` move (`g`/`G`
+ends), `1-9` picks directly, `Enter`/`l` applies, `Esc`/`h` backs out — focus
+returns to the input only then. Every picker that appears while the composer
+is live (permission prompts included) uses the same inline list; the
+full-screen variant remains for the flat small-popup layout
+(`ACP_HUB_INTERACTIVE_UI=0` forces text menus).
 
 ### Prompt input
 

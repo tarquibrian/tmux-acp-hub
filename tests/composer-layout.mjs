@@ -232,33 +232,54 @@ const session = (line = "") => ({ pinned: true, line, cursor: line.length });
   // Enter on "/model" opens the inline picker instead of resolving the prompt.
   assert.equal(ui.maybeOpenInlinePicker(session), true);
   assert.ok(ui.inlinePicker, "picker state set");
-  assert.equal(session.line, "", "input cleared, composer stays live");
+  assert.equal(session.line, "", "input cleared, composer stays on screen");
   assert.equal(ui.inlinePicker.index, 1, "selection starts on the current value");
 
-  // Layout: the list takes the dropdown zone below the input (items + title).
+  // Layout: the list takes the dropdown zone below the input (items + title),
+  // with a blank pad row keeping it off the tmux status bar.
   const layout = ui.rawInputLayout(session);
   assert.equal(layout.dropdownRows, 4, "3 items + title row");
   assert.ok(layout.dropdownRow > layout.inputRow, "list renders below the input");
   assert.equal(layout.footerRow, null, "footer yields to the list");
+  assert.equal(layout.dropdownPadRow, layout.dropdownRow + 4, "pad row under the list");
+  assert.ok(layout.composerRows.includes(layout.dropdownPadRow), "pad row is composer-owned");
 
-  // Keys: navigation, number-pick, esc.
-  ui.handleInlinePickerKey(session, "", { name: "down" });
-  assert.equal(ui.inlinePicker.index, 2);
-  ui.handleInlinePickerKey(session, "", { name: "up" });
-  assert.equal(ui.inlinePicker.index, 1);
+  // Keys: full capture — vim navigation, number-pick, swallowed printables.
+  ui.handleInlinePickerKey(session, "j", { name: "j" });
+  assert.equal(ui.inlinePicker.index, 2, "j moves down");
+  ui.handleInlinePickerKey(session, "k", { name: "k" });
+  assert.equal(ui.inlinePicker.index, 1, "k moves up");
+  assert.equal(ui.handleInlinePickerKey(session, "x", { name: "x" }), true, "printables swallowed");
+  assert.ok(ui.inlinePicker, "picker stays open on stray keys");
+  assert.equal(session.line, "", "nothing leaks into the input");
   assert.equal(ui.handleInlinePickerKey(session, "1", { name: "1" }), true);
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(applied, { id: "model", value: "gpt-5.5" }, "number applies that option");
   assert.equal(ui.inlinePicker, null, "picker closes after apply");
 
-  // Esc closes without applying; a printable key closes and falls through.
+  // Esc and h close without applying.
   assert.equal(ui.maybeOpenInlinePicker({ ...session, line: "/model" }), true);
-  ui.rawInput.line = "";
-  assert.equal(ui.handleInlinePickerKey(ui.rawInput, "", { name: "escape" }), true);
+  assert.equal(ui.handleInlinePickerKey(session, "", { name: "escape" }), true);
   assert.equal(ui.inlinePicker, null);
   assert.equal(ui.maybeOpenInlinePicker({ ...session, line: "/model" }), true);
-  assert.equal(ui.handleInlinePickerKey(ui.rawInput, "x", { name: "x" }), false, "typing falls through");
-  assert.equal(ui.inlinePicker, null, "typing closes the list");
+  assert.equal(ui.handleInlinePickerKey(session, "h", { name: "h" }), true, "h backs out");
+  assert.equal(ui.inlinePicker, null);
+
+  // quickSelect routes through the inline picker while the composer is live.
+  ui.pickerSupported = () => true;
+  ui.lastRawScrollBottom = 20;
+  const quick = ui.quickSelect({
+    title: "Mode",
+    items: [
+      { label: "read-only", value: "read-only" },
+      { label: "auto", value: "auto", current: true },
+    ],
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(ui.inlinePicker, "quickSelect opened inline");
+  assert.equal(ui.inlinePicker.index, 1, "current value preselected");
+  ui.handleInlinePickerKey(session, "l", { name: "l" });
+  assert.equal(await quick, "auto", "l resolves the awaited quickSelect");
 }
 
 console.log("composer-layout test passed");
