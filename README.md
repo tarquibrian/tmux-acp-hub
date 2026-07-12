@@ -311,9 +311,9 @@ ring (`Ctrl+Y`). `Ctrl+C` cancels an active turn and clears the input, else
 clears the input, else exits. `Ctrl+L` repaints the whole screen. `Ctrl+X`
 (or `/edit`) opens the draft in `$VISUAL`/`$EDITOR` (blocking, in this pane)
 and reloads the buffer into the composer on exit — the natural way to write
-long prompts. For terminals configured with Option/Alt as Meta, `Alt+E`,
-`Alt+Enter`/`Alt+J` (newline), and `Alt+B`/`Alt+F` (word jumps) also work as
-quiet aliases.
+long prompts. `Ctrl+G` (or `/rename`) renames the chat. For terminals
+configured with Option/Alt as Meta, `Alt+E`, `Alt+Enter`/`Alt+J` (newline),
+and `Alt+B`/`Alt+F` (word jumps) also work as quiet aliases.
 
 **Draft cost.** While you type, the footer shows an estimated token count for
 the draft (`~1.5k tok`): composer text at ~4 chars/token, pending attachments
