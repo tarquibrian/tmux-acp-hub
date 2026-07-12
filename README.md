@@ -299,18 +299,21 @@ divider shows compact badges (`[PLAN]`, `[READ-ONLY]`, `[FULL-ACCESS]`,
 shorter than 15 rows — or with `ACP_HUB_COMPOSER_BOX=0` — it falls back to the
 flat divider layout.
 
-**Editing.** Left/right, Home/End (`Ctrl+A`/`Ctrl+E`), `Ctrl+U`, `Ctrl+K`,
-`Ctrl+W`, `Ctrl+Y`, `Alt+B`, `Alt+F`, Up/Down history, and `Ctrl+R` reverse
-search. Multiline with `Ctrl+J`, `Alt+J`, or `Alt+Enter`; plain `Enter` sends.
+**Editing.** Everything advertised is a `Ctrl` chord — it sits in the same
+place on every keyboard, unlike Alt/Option. Left/right, Home/End
+(`Ctrl+A`/`Ctrl+E`), `Ctrl+U`, `Ctrl+K`, `Ctrl+W`, `Ctrl+Y`, Up/Down history,
+and `Ctrl+R` reverse search. Multiline with `Ctrl+J`; plain `Enter` sends.
 The composer grows to six rows (`↑ N more` / `↓ N more` counters beyond that).
 `Esc` cancels an active turn (the draft is kept) — and if the composer is
 empty, the just-sent prompt is restored into it, so "wait, one more thing" is
 cancel → tweak → Enter. Otherwise double `Esc` clears the input into the kill
 ring (`Ctrl+Y`). `Ctrl+C` cancels an active turn and clears the input, else
-clears the input, else exits. `Ctrl+L` repaints the
-whole screen. `Alt+E` opens the draft in `$VISUAL`/`$EDITOR` (blocking, in
-this pane) and reloads the buffer into the composer on exit — the natural way
-to write long prompts.
+clears the input, else exits. `Ctrl+L` repaints the whole screen. `Ctrl+X`
+(or `/edit`) opens the draft in `$VISUAL`/`$EDITOR` (blocking, in this pane)
+and reloads the buffer into the composer on exit — the natural way to write
+long prompts. For terminals configured with Option/Alt as Meta, `Alt+E`,
+`Alt+Enter`/`Alt+J` (newline), and `Alt+B`/`Alt+F` (word jumps) also work as
+quiet aliases.
 
 **Draft cost.** While you type, the footer shows an estimated token count for
 the draft (`~1.5k tok`): composer text at ~4 chars/token, pending attachments
