@@ -36,6 +36,7 @@ half-box composer, and the tab bar showing a Codex and a Claude chat.](assets/sc
 - [tmux-resurrect / continuum](#tmux-resurrect--continuum)
 - [Troubleshooting](#troubleshooting)
 - [Tests](#tests)
+- [License](#license)
 
 ## Requirements
 
@@ -576,3 +577,14 @@ chunks; `render-width.mjs` covers the display-width / ANSI wrapping primitives;
 `render-live-table.mjs` guards the progressive table pipeline; `picker.mjs`,
 `composer-layout.mjs`, `autocomplete.mjs`, and `highlight.mjs` cover the UI
 logic.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+tmux-acp-hub is an independent project. It is not affiliated with, endorsed
+by, or sponsored by the [Agent Client Protocol](https://agentclientprotocol.com)
+project, Zed Industries, OpenAI, or Anthropic. "ACP" in the name describes
+compatibility: the plugin talks to any agent that implements the protocol.
+The ACP specification, SDK, and the default adapters are licensed Apache-2.0
+by their respective authors.
