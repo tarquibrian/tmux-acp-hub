@@ -21,6 +21,9 @@ import {
   mkdirp,
   readJsonIfExists,
   loadConfig,
+  npxAdapterPin,
+  compareSemver,
+  parseNpmViewInfo,
   resolveProjectRoot,
   projectName,
   pickerFilterEntries,
@@ -107,7 +110,10 @@ async function ensureDaemon() {
   }
 
   rotateDaemonLog();
-  const logFd = fs.openSync(LOG_PATH, "a");
+  // The log can quote adapter stderr (paths, error context): private like the
+  // rest of the state dir. `mode` only applies at creation; daemon start()
+  // heals pre-existing 0644 logs.
+  const logFd = fs.openSync(LOG_PATH, "a", 0o600);
   const child = spawn(process.execPath, [SCRIPT_PATH, "daemon"], {
     detached: true,
     stdio: ["ignore", logFd, logFd],
@@ -877,7 +883,13 @@ async function runHealth() {
   const bad = (label, value) => console.log(`✗ ${label}: ${value}`);
 
   const nodeMajor = Number(process.versions.node.split(".")[0]);
-  (nodeMajor >= 18 ? ok : bad)("node", `${process.version}${nodeMajor < 18 ? " (need >= 18)" : ""}`);
+  const nodeNote =
+    nodeMajor < 18
+      ? " (need >= 18)"
+      : nodeMajor < 22
+        ? " (plugin ok; bundled adapters need >= 22)"
+        : "";
+  (nodeMajor >= 18 ? ok : bad)("node", `${process.version}${nodeNote}`);
 
   const tmux = spawnSync("tmux", ["-V"], { encoding: "utf8" });
   if (tmux.status === 0) {
@@ -918,6 +930,28 @@ async function runHealth() {
       `agent ${name}`,
       which.status === 0 ? `${command} ${(agent.args || []).join(" ")}`.trim() : `${command} not found in PATH`,
     );
+  }
+
+  // Adapter pin currency: compare npx-style pins against the npm registry.
+  // Being offline is not a health failure — registry errors skip silently.
+  const warn = (label, value) => console.log(`⚠ ${label}: ${value}`);
+  for (const [name, agent] of Object.entries(config.agents || {})) {
+    const pin = npxAdapterPin(agent);
+    if (!pin) continue;
+    const view = spawnSync("npm", ["view", pin.pkg, "version", "deprecated", "--json"], {
+      encoding: "utf8",
+      timeout: 5000,
+    });
+    if (view.status !== 0 || !view.stdout) continue;
+    const info = parseNpmViewInfo(view.stdout);
+    if (!info) continue;
+    if (info.deprecated) {
+      warn(`agent ${name} pin`, `${pin.pkg} is DEPRECATED: ${info.deprecated}`);
+    } else if (info.latest && compareSemver(pin.version, info.latest) < 0) {
+      warn(`agent ${name} pin`, `${pin.pkg} pinned ${pin.version}, latest ${info.latest}`);
+    } else if (info.latest) {
+      ok(`agent ${name} pin`, `${pin.pkg}@${pin.version} is latest`);
+    }
   }
 }
 

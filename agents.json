@@ -4,12 +4,12 @@
     "codex": {
       "label": "Codex ACP",
       "command": "npx",
-      "args": ["-y", "@zed-industries/codex-acp@0.16.0"]
+      "args": ["-y", "@agentclientprotocol/codex-acp@1.1.4"]
     },
     "claude": {
       "label": "Claude ACP",
       "command": "npx",
-      "args": ["-y", "@agentclientprotocol/claude-agent-acp@0.57.0"]
+      "args": ["-y", "@agentclientprotocol/claude-agent-acp@0.59.0"]
     }
   }
 }

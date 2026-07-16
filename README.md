@@ -42,7 +42,7 @@ half-box composer, and the tab bar showing a Codex and a Claude chat.](assets/sc
 | Need | Version / note |
 |------|----------------|
 | tmux | >= 3.4 |
-| Node.js | >= 18 (no npm dependencies; the plugin is self-contained) |
+| Node.js | >= 18 for the plugin itself (no npm dependencies; self-contained); **>= 22 for the bundled adapters** (`claude-agent-acp` requires it) |
 | ACP adapters | fetched on demand via `npx` — Codex `codex-acp`, Claude Code `claude-agent-acp` |
 
 Each provider authenticates through its own CLI/account the first time
@@ -91,7 +91,7 @@ scope a key to one agent, add an `env` block in
   "agents": {
     "codex": {
       "command": "npx",
-      "args": ["-y", "@zed-industries/codex-acp@0.16.0"],
+      "args": ["-y", "@agentclientprotocol/codex-acp@1.1.4"],
       "env": { "OPENAI_API_KEY": "sk-..." }
     }
   }
@@ -408,17 +408,23 @@ underneath. A new provider model arrives by updating those two layers — no
 plugin change:
 
 - Bump the adapter pin in `agents.json`
-  (`@zed-industries/codex-acp@x.y.z`, `@agentclientprotocol/claude-agent-acp@x.y.z`),
+  (`@agentclientprotocol/codex-acp@x.y.z`, `@agentclientprotocol/claude-agent-acp@x.y.z`),
   or use `@latest`.
 - Keep the underlying CLIs (`codex`, `claude`) current as you already do.
 
 Default adapters:
 
-- `codex`: `npx -y @zed-industries/codex-acp@0.16.0`
-- `claude`: `npx -y @agentclientprotocol/claude-agent-acp@0.57.0`
+- `codex`: `npx -y @agentclientprotocol/codex-acp@1.1.4`
+- `claude`: `npx -y @agentclientprotocol/claude-agent-acp@0.59.0`
 
-`acp-hub.mjs health` prints the pinned versions. After changing a pin, restart
-the daemon (`acp-hub.mjs stop`).
+> **Migrating from `@zed-industries/codex-acp`?** That package is deprecated
+> and frozen at 0.16.0 — if your `~/.config/tmux-acp-hub/agents.json` still
+> references it, switch to `@agentclientprotocol/codex-acp` to keep receiving
+> updates.
+
+`acp-hub.mjs health` prints the pinned versions and warns when a pin is
+behind the npm latest or the package is deprecated. After changing a pin,
+restart the daemon (`acp-hub.mjs stop`).
 
 ### Provider config defaults
 
