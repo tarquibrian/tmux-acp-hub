@@ -4,7 +4,12 @@
 // output shapes `npm view <pkg> version deprecated --json` can produce.
 // Pure functions only — no network.
 import assert from "node:assert/strict";
-import { npxAdapterPin, compareSemver, parseNpmViewInfo } from "../lib/core.mjs";
+import {
+  npxAdapterPin,
+  compareSemver,
+  parseNpmViewInfo,
+  acpProtocolMismatch,
+} from "../lib/core.mjs";
 
 // npxAdapterPin: scoped package with exact pin.
 {
@@ -76,6 +81,21 @@ import { npxAdapterPin, compareSemver, parseNpmViewInfo } from "../lib/core.mjs"
   assert.equal(parseNpmViewInfo("npm ERR! network"), null);
   assert.equal(parseNpmViewInfo(""), null);
   assert.equal(parseNpmViewInfo("null"), null);
+}
+
+// acpProtocolMismatch: matching, omitted, and null versions are fine.
+{
+  assert.equal(acpProtocolMismatch(1), null);
+  assert.equal(acpProtocolMismatch(undefined), null);
+  assert.equal(acpProtocolMismatch(null), null);
+}
+
+// acpProtocolMismatch: a different negotiated version warns, naming both sides.
+{
+  const warning = acpProtocolMismatch(2);
+  assert.ok(warning.includes("v2"));
+  assert.ok(warning.includes("v1"));
+  assert.equal(acpProtocolMismatch(0) === null, false, "v0 also mismatches");
 }
 
 console.log("health test passed");
