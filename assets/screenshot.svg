@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760">
+  <rect width="1200" height="760" rx="12" fill="#090a0e"/>
+  <rect x="1" y="1" width="1198" height="758" rx="11" fill="none" stroke="#30333d"/>
+  <style>
+    text { font-family: "JetBrains Mono", "SFMono-Regular", Menlo, monospace; font-size: 18px; fill: #d8d9df; }
+    .bold { font-weight: 700; fill: #f1f1f4; } .dim { fill: #777b86; }
+    .blue { fill: #00b7eb; } .green { fill: #25d94f; }
+    .rule { stroke: #d6336c; stroke-width: 2; }
+  </style>
+  <g xml:space="preserve">
+    <text x="30" y="44"><tspan class="blue">⬡ Codex</tspan><tspan class="dim">  ·  </tspan><tspan class="bold">sample-project</tspan><tspan class="dim">  ·  </tspan><tspan class="bold">Release checklist summary</tspan><tspan class="dim">  ·  test</tspan></text>
+    <text x="30" y="92"><tspan class="blue">❯</tspan><tspan class="bold">  Show a compact table for the release checklist</tspan></text>
+    <text x="30" y="138" class="dim">▸ Worked for &lt;1s</text>
+    <text x="48" y="190" class="bold">• Area             Files   Contents</text>
+    <text x="70" y="220" class="dim">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</text>
+    <text x="70" y="252">renderer            12   wrapping, colors, and Activity</text>
+    <text x="70" y="284" class="dim">────────────────────────────────────────────────────</text>
+    <text x="70" y="316">tests               27   protocol, UI, persistence, and tmux</text>
+    <text x="70" y="348" class="dim">────────────────────────────────────────────────────</text>
+    <text x="70" y="380">release              4   docs, package, CI, and screenshots</text>
+    <text x="30" y="450"><tspan class="bold">Plan </tspan><tspan class="dim">3/3  </tspan><tspan class="green">● ● ●</tspan><tspan class="dim">  100%  </tspan><tspan class="green">Complete</tspan></text>
+    <text x="48" y="484"><tspan class="green">✓</tspan> Validate the renderer and input lifecycle</text>
+    <text x="48" y="514"><tspan class="green">✓</tspan> Verify the installable package</text>
+    <text x="48" y="544"><tspan class="green">✓</tspan> Prepare release documentation</text>
+    <line x1="18" y1="598" x2="1182" y2="598" class="rule"/>
+    <text x="30" y="630"><tspan class="blue">❯</tspan><tspan class="dim">  Write a message · / commands · @ files</tspan></text>
+    <line x1="18" y1="650" x2="1182" y2="650" class="rule"/>
+    <text x="30" y="686"><tspan>fake-small  low</tspan><tspan class="dim"> · test · /tmp/sample-project</tspan></text>
+    <text x="30" y="720" class="dim">← menu · Tab mode · Ctrl+X editor</text>
+  </g>
+</svg>

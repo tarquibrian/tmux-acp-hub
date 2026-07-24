@@ -6,12 +6,24 @@ process.stdout.isTTY = true;
 delete process.env.TMUX;
 
 const { highlightCode } = await import("../bin/acp-hub.mjs");
+const { codeLanguageForPath } = await import("../lib/core.mjs");
 
 const KEYWORD = "\x1b[38;5;176m";
 const STRING = "\x1b[38;5;114m";
 const NUMBER = "\x1b[38;5;179m";
 const COMMENT = "\x1b[38;5;245m";
+const SPECIAL = "\x1b[38;5;81m";
 const END = "\x1b[39m";
+
+// --- File paths select the same language aliases used by fenced code --------
+assert.equal(codeLanguageForPath("lib/ui.mjs"), "mjs");
+assert.equal(codeLanguageForPath("src/view.tsx"), "tsx");
+assert.equal(codeLanguageForPath("scripts/release.zsh"), "zsh");
+assert.equal(codeLanguageForPath("Dockerfile"), "dockerfile");
+assert.equal(codeLanguageForPath("Makefile"), "makefile");
+assert.equal(codeLanguageForPath("tmux.conf"), "tmux");
+assert.equal(codeLanguageForPath("/home/user/.tmux.conf"), "tmux");
+assert.equal(codeLanguageForPath("assets/blob.unknown"), "");
 
 // --- JavaScript -------------------------------------------------------------------
 {
@@ -40,6 +52,26 @@ const END = "\x1b[39m";
   const out = highlightCode('if [ -f "$1" ]; then # check', "bash");
   assert.ok(out.includes(`${KEYWORD}if${END}`), "shell keyword");
   assert.ok(out.includes(`${COMMENT}# check${END}`), "shell comment");
+}
+
+// --- tmux -------------------------------------------------------------------------
+{
+  const out = highlightCode("set -g @acp_hub_padding '2'", "tmux");
+  assert.ok(out.includes(`${KEYWORD}set${END}`), "tmux command tinted");
+  assert.ok(out.includes(`${SPECIAL}-g${END}`), "tmux flag tinted");
+  assert.ok(out.includes(`${SPECIAL}@acp_hub_padding${END}`), "tmux user option tinted");
+  assert.ok(out.includes(`${STRING}'2'${END}`), "tmux value tinted");
+
+  const format = highlightCode("display-message '#{pane_current_path}'", "tmuxconf");
+  assert.ok(format.includes(`${KEYWORD}display-message${END}`), "tmux alias uses grammar");
+  assert.ok(format.includes(`${SPECIAL}'#{pane_current_path}'${END}`), "tmux format tinted");
+  assert.equal(highlightCode("# set -g @fake 2", "tmux"), `${COMMENT}# set -g @fake 2${END}`);
+}
+
+// Plain-text fences deliberately remain neutral.
+{
+  const line = "set -g @acp_hub_padding '2'";
+  assert.equal(highlightCode(line, "text"), line);
 }
 
 // --- Numbers ----------------------------------------------------------------------

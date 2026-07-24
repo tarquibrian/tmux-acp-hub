@@ -21,14 +21,28 @@
 - Keep streaming output from corrupting the input prompt.
 - Add filtering, provider grouping, status badges, and easier switching.
 
-## Phase 4: ACP Capabilities
+## Phase 4: ACP Capabilities - in progress
 
 - Implement safe client `fs/*` capabilities.
 - Add terminal capabilities where useful.
-- Surface modes, config options, available commands, and auth flows.
+- [x] Surface modes, config options, available commands, and auth flows.
+- [x] Add scoped MCP administration, secret-safe diagnostics, capability
+  gating, transactional apply/rollback, and inline composer management.
 
-## Phase 5: Release Quality
+## Phase 5: Release Quality - done in 0.2.0
 
-- Add automated tests for protocol edge cases.
-- Add health checks, logs, upgrade notes, and troubleshooting commands.
-- Package the plugin with documented install/update flows.
+- [x] Add automated tests for protocol, renderer, input, persistence, and tmux edge cases.
+- [x] Add health checks, logs, upgrade notes, and troubleshooting commands.
+- [x] Package the plugin with documented install/update flows and CI validation.
+- [x] Add verified private adapter installs, version checks, staged activation,
+  rollback, and popup/CLI management commands.
+
+## Next
+
+- Implement ACP client filesystem capabilities with explicit workspace scoping.
+- Evaluate terminal capabilities behind an opt-in permission boundary.
+- Add adapter compatibility fixtures as more ACP agents expose structured
+  message roles, plans, commands, and capabilities. Initial Codex/Claude
+  package, handshake, and required-capability matrices are complete.
+- Expand MCP preflight into an optional protocol-level connectivity probe when
+  ACP standardizes a safe adapter-owned diagnostic call.

@@ -18,11 +18,9 @@ function makeUi() {
     questionActive: false,
     rawInput: null,
     closed: false,
-    transcriptLines: [""],
+    transcriptEntries: [""],
     activityMode: "compact",
     showInternalEvents: false,
-    lastActivityGroup: "",
-    activityGroupLineCount: 0,
   });
   return ui;
 }

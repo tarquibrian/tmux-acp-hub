@@ -236,6 +236,8 @@ set_window_metadata() {
   # Empty title → the tab falls back to the clean window name (#W) instead of a
   # placeholder; the UI fills in the real title and renames the window.
   tmux set-window-option -t "$target" -q @acp_hub_title ""
+  tmux set-window-option -t "$target" -q @acp_hub_tab_title ""
+  tmux set-window-option -t "$target" -q @acp_hub_title_source ""
   refresh_status_line
 }
 
@@ -278,6 +280,40 @@ default_agent() {
   tmux_option @acp_hub_default_agent "codex"
 }
 
+hub_state_dir() {
+  if [ -n "${ACP_HUB_HOME:-}" ]; then
+    printf "%s" "$ACP_HUB_HOME"
+  else
+    printf "%s/tmux-acp-hub" "${XDG_CACHE_HOME:-$HOME/.cache}"
+  fi
+}
+
+# `/restart` is detached from the popup that requested it. Without a marker,
+# prefix+m can create a replacement workspace just before the restart process
+# kills every old workspace, making the new popup flash and disappear too.
+wait_for_hub_restart() {
+  restart_lock="$(hub_state_dir)/restart.lock"
+  restart_waits=0
+  if [ -f "$restart_lock" ]; then
+    tmux display-message "acp-hub: finishing restart…" 2>/dev/null || true
+  fi
+  while [ -f "$restart_lock" ]; do
+    restart_now="$(date +%s)"
+    restart_mtime="$(stat -f %m "$restart_lock" 2>/dev/null || stat -c %Y "$restart_lock" 2>/dev/null || printf 0)"
+    case "$restart_mtime" in ''|*[!0-9]*) restart_mtime=0 ;; esac
+    if [ "$restart_mtime" -eq 0 ] || [ $((restart_now - restart_mtime)) -gt 60 ]; then
+      rm -f "$restart_lock"
+      break
+    fi
+    restart_waits=$((restart_waits + 1))
+    if [ "$restart_waits" -ge 300 ]; then
+      tmux display-message "acp-hub: restart still in progress; try again shortly" 2>/dev/null || true
+      return 1
+    fi
+    sleep 0.1
+  done
+}
+
 set_workspace_metadata() {
   session="$1"
   project_path="$2"
@@ -298,28 +334,62 @@ set_workspace_metadata() {
 # boot) intermittently reverts it to the theme default, so a chat tab shows the
 # raw canonical window name instead of its title. Split out so the daemon/UI
 # can re-assert it on every metadata sync and self-heal that transient.
+resolve_acp_theme_styles() {
+  acp_theme="$(tmux show-option -gqv @acp_hub_theme)"
+  [ "$acp_theme" = "agent" ] || acp_theme="vanzi"
+  acp_accent="$(tmux show-option -gqv @acp_hub_accent)"
+  case "$acp_accent" in
+    \#[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F])
+      acp_vanzi_style="#[fg=$acp_accent]"
+      acp_vanzi_current_style="#[fg=black]#[bg=$acp_accent]"
+      ;;
+    [0-9]|[0-9][0-9]|[0-9][0-9][0-9])
+      acp_vanzi_style="#[fg=colour$acp_accent]"
+      acp_vanzi_current_style="#[fg=black]#[bg=colour$acp_accent]"
+      ;;
+    *)
+      acp_vanzi_style="#[fg=colour168]"
+      acp_vanzi_current_style="#[fg=black]#[bg=colour168]"
+      ;;
+  esac
+  acp_agent_style="#{?#{==:#{@acp_hub_provider},claude},#[fg=colour173],#{?#{==:#{@acp_hub_provider},codex},#[fg=colour39],$acp_vanzi_style}}"
+  # Composite styles inside `#{?...,...,...}` cannot contain raw commas: tmux
+  # treats them as branch separators and truncates the active tab. Independent
+  # directives are parser-safe in both direct and nested formats.
+  acp_agent_current_style="#{?#{==:#{@acp_hub_provider},claude},#[fg=black]#[bg=colour173],#{?#{==:#{@acp_hub_provider},codex},#[fg=black]#[bg=colour39],$acp_vanzi_current_style}}"
+  if [ "$acp_theme" = "agent" ]; then
+    ACP_THEME_PROVIDER_STYLE="$acp_agent_style"
+    ACP_THEME_PROVIDER_CURRENT_STYLE="$acp_agent_current_style"
+  else
+    ACP_THEME_PROVIDER_STYLE="$acp_vanzi_style"
+    ACP_THEME_PROVIDER_CURRENT_STYLE="$acp_vanzi_current_style"
+  fi
+}
+
 apply_acp_status_format() {
   session="$1"
   # Inside the ACP workspace, show minimal chat labels in the status bar:
   # provider icon (accent-colored), renameable title, and a status glyph only
   # when the chat needs attention (busy/permission/auth/error) — idle is quiet.
-  # Codex = characteristic blue, Claude = characteristic orange; unknown falls
-  # back to blue. Applied to the icon on inactive tabs only.
-  acp_provider_style="#{?#{==:#{@acp_hub_provider},claude},#[fg=colour173],#{?#{==:#{@acp_hub_provider},codex},#[fg=colour39],#[fg=colour39]}}"
+  resolve_acp_theme_styles
+  acp_provider_style="$ACP_THEME_PROVIDER_STYLE"
+  acp_provider_current_style="$ACP_THEME_PROVIDER_CURRENT_STYLE"
   acp_icon="#{?#{@acp_hub_provider_icon},#{@acp_hub_provider_icon},#{@acp_hub_provider_short}}"
   acp_attention_states="responding|thinking|working|planning|starting|cancelling|permission|auth|error"
   # Inactive tabs: semantic hue for the attention glyph (dark bg reads it fine).
-  acp_attention="#{?#{m/r:^($acp_attention_states)$,#{@acp_hub_status}}, #{?#{==:#{@acp_hub_status},error},#[fg=red],#{?#{m/r:^(permission|auth)$,#{@acp_hub_status}},#[fg=yellow],#[fg=cyan]}}#{@acp_hub_status_glyph}#[default],}"
+  # The right pad belongs to the attention suffix itself. Keeping it before
+  # #[default] prevents the busy glyph from visually consuming the last cell
+  # of an inactive tab; the idle branch still contributes the same one cell.
+  acp_attention="#{?#{m/r:^($acp_attention_states)$,#{@acp_hub_status}}, #{?#{==:#{@acp_hub_status},error},#[fg=colour168],#{?#{m/r:^(permission|auth)$,#{@acp_hub_status}},#[fg=yellow],#[fg=cyan]}}#{@acp_hub_status_glyph} #[default], }"
   # Active tab: the glyph inherits the current-style (black on the accent bar)
   # like the icon and title; its shape (◐ ⏸ ⊘ ✗) already carries the state, so
   # a semantic tint would only cost contrast on the punk background.
-  acp_attention_active="#{?#{m/r:^($acp_attention_states)$,#{@acp_hub_status}}, #{@acp_hub_status_glyph},}"
-  acp_title="#{?#{@acp_hub_title},#{@acp_hub_title},#W}"
-  # Inactive: provider-colored icon. Active (current): the icon inherits the
-  # window-status-current-style so it reads black like the title on the accent
-  # background, instead of a low-contrast provider tint.
-  acp_window_status_format=" $acp_provider_style$acp_icon#[default] $acp_title$acp_attention "
-  acp_window_status_current_format=" $acp_icon $acp_title$acp_attention_active "
+  acp_attention_active="#{?#{m/r:^($acp_attention_states)$,#{@acp_hub_status}}, #{@acp_hub_status_glyph} , }"
+  acp_title="#{?#{@acp_hub_tab_title},#{@acp_hub_tab_title},#{?#{@acp_hub_title},#{@acp_hub_title},#W}}"
+  # Inactive: theme-accented icon. Active: the resolved accent owns the tab
+  # background and the icon/title use dark text for contrast.
+  acp_window_status_format=" $acp_provider_style$acp_icon#[default] $acp_title$acp_attention"
+  acp_window_status_current_format="$acp_provider_current_style $acp_icon $acp_title$acp_attention_active#[default]"
   tmux set-option -t "$session" -q window-status-format "$acp_window_status_format"
   tmux set-option -t "$session" -q window-status-current-format "$acp_window_status_current_format"
   tmux set-option -t "$session" -q window-status-separator ""

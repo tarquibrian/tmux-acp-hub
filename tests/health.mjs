@@ -9,7 +9,40 @@ import {
   compareSemver,
   parseNpmViewInfo,
   acpProtocolMismatch,
+  configCredentialEnvNames,
+  redactCommandArgs,
+  mergeConfig,
 } from "../lib/core.mjs";
+
+// Partial user overrides inherit the tested command/pin instead of forcing
+// users to copy it forever. Nested env/default maps merge independently.
+{
+  const merged = mergeConfig(
+    {
+      defaultAgent: "codex",
+      agents: {
+        codex: {
+          command: "npx",
+          args: ["-y", "@scope/codex-acp@1.2.3"],
+          env: { KEEP: "1", REPLACE: "old" },
+          configDefaults: { model: "default", effort: "medium" },
+        },
+      },
+    },
+    {
+      agents: {
+        codex: {
+          env: { REPLACE: "new" },
+          configDefaults: { effort: "high" },
+        },
+      },
+    },
+  );
+  assert.equal(merged.agents.codex.command, "npx");
+  assert.deepEqual(merged.agents.codex.args, ["-y", "@scope/codex-acp@1.2.3"]);
+  assert.deepEqual(merged.agents.codex.env, { KEEP: "1", REPLACE: "new" });
+  assert.deepEqual(merged.agents.codex.configDefaults, { model: "default", effort: "high" });
+}
 
 // npxAdapterPin: scoped package with exact pin.
 {
@@ -60,6 +93,9 @@ import {
   assert.equal(compareSemver("1.0.0-beta.1", "1.0.0"), -1);
   assert.equal(compareSemver("1.0.0", "1.0.0-beta.1"), 1);
   assert.equal(compareSemver("1.0.0-alpha", "1.0.0-beta"), -1);
+  assert.equal(compareSemver("1.0.0-beta.2", "1.0.0-beta.10"), -1);
+  assert.equal(compareSemver("1.0.0-beta.10", "1.0.0-beta.2"), 1);
+  assert.equal(compareSemver("1.0.0-1", "1.0.0-alpha"), -1);
   assert.equal(compareSemver("1.0.0-beta", "1.0.0-beta"), 0);
 }
 
@@ -96,6 +132,53 @@ import {
   assert.ok(warning.includes("v2"));
   assert.ok(warning.includes("v1"));
   assert.equal(acpProtocolMismatch(0) === null, false, "v0 also mismatches");
+}
+
+// Config safety inspection reports names only and ignores ordinary env vars.
+{
+  assert.deepEqual(
+    configCredentialEnvNames({
+      agents: {
+        codex: {
+          env: {
+            OPENAI_API_KEY: "secret-value",
+            NO_BROWSER: "1",
+            EMPTY_TOKEN: "",
+          },
+        },
+        claude: { env: { ANTHROPIC_TOKEN: "another-secret" } },
+      },
+    }),
+    ["ANTHROPIC_TOKEN", "OPENAI_API_KEY"],
+  );
+  assert.deepEqual(configCredentialEnvNames(null), []);
+}
+
+// Health command arguments preserve useful package/version information while
+// redacting common flag, header, URL-userinfo, and query credential forms.
+{
+  assert.deepEqual(
+    redactCommandArgs([
+      "-y",
+      "@agentclientprotocol/codex-acp@1.1.4",
+      "--api-key",
+      "secret-one",
+      "--token=secret-two",
+      "Authorization: Bearer secret-three",
+      "OPENAI_API_KEY=secret-env",
+      "https://user:pass@example.test/acp?access_token=secret-four&mode=test",
+    ]),
+    [
+      "-y",
+      "@agentclientprotocol/codex-acp@1.1.4",
+      "--api-key",
+      "[redacted]",
+      "--token=[redacted]",
+      "Authorization: [redacted]",
+      "OPENAI_API_KEY=[redacted]",
+      "https://redacted@example.test/acp?access_token=%5Bredacted%5D&mode=test",
+    ],
+  );
 }
 
 console.log("health test passed");

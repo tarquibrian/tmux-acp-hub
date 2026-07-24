@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Node ${{ matrix.node }} / Ubuntu
+    needs: compatibility_plan
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.compatibility_plan.outputs.hub_nodes) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Install tmux
+        run: sudo apt-get update && sudo apt-get install --yes tmux
+      - run: npm run check
+
+  macos:
+    name: Node 22 / macOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install tmux
+        run: brew list tmux >/dev/null 2>&1 || brew install tmux
+      - run: npm run check
+
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install --yes shellcheck
+      - name: Check shell entry points
+        run: shellcheck --severity=error -s sh acp-hub.tmux scripts/*.sh
+
+  package:
+    # npm is only the dependency-free project runner/packer here. The plugin
+    # is distributed from GitHub and package.json is deliberately private.
+    name: Private runtime bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build and install tarball
+        shell: bash
+        run: |
+          tarball="$(npm pack --silent --pack-destination "$RUNNER_TEMP")"
+          npm install --prefix "$RUNNER_TEMP/install" "$RUNNER_TEMP/$tarball"
+          expected="$(node -p 'JSON.parse(require("node:fs").readFileSync("package.json")).version')"
+          test "$("$RUNNER_TEMP/install/node_modules/.bin/acp-hub" --version)" = "$expected"
+
+  compatibility_plan:
+    name: Adapter compatibility plan
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.value }}
+      hub_nodes: ${{ steps.hub_nodes.outputs.value }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - id: matrix
+        name: Read canonical adapter matrix
+        run: echo "value=$(npm run --silent adapters:matrix)" >> "$GITHUB_OUTPUT"
+      - id: hub_nodes
+        name: Read canonical Hub Node matrix
+        run: echo "value=$(node scripts/adapter-maintenance.mjs matrix --github --hub-nodes)" >> "$GITHUB_OUTPUT"
+
+  compatibility:
+    name: ${{ matrix.provider }} ${{ matrix.version }} / ACP v1
+    needs: compatibility_plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.compatibility_plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Install, verify, and inspect adapter
+        run: npm run adapters:probe -- "${{ matrix.provider }}" "${{ matrix.version }}"

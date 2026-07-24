@@ -1,0 +1,90 @@
+name: Adapter maintenance
+
+on:
+  schedule:
+    - cron: "23 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: adapter-maintenance
+  cancel-in-progress: false
+
+jobs:
+  detect_and_probe:
+    name: Detect and probe new adapter releases
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      updates: ${{ steps.result.outputs.updates }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Query configured registry tags
+        run: npm run adapters:check -- --report "$RUNNER_TEMP/adapter-report.json"
+      # This job intentionally has read-only repository permissions: npm
+      # candidates are installed and executed only inside this boundary.
+      - name: Verify package, ACP handshake, and required capabilities
+        run: node scripts/adapter-maintenance.mjs probe --report "$RUNNER_TEMP/adapter-report.json"
+      - id: result
+        name: Record whether verified updates exist
+        run: |
+          value="$(node -e 'const r=require(process.argv[1]); process.stdout.write(String(r.providers.some(p=>p.updateAvailable&&!p.error&&!p.deprecated)))' "$RUNNER_TEMP/adapter-report.json")"
+          echo "updates=$value" >> "$GITHUB_OUTPUT"
+      - name: Preserve the verified compatibility report
+        uses: actions/upload-artifact@v4
+        with:
+          name: adapter-compatibility-report
+          path: ${{ runner.temp }}/adapter-report.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Require manual review for package deprecation
+        run: |
+          node -e 'const r=require(process.argv[1]); const bad=r.providers.filter(p=>p.deprecated); if(bad.length){console.error(bad.map(p=>`${p.provider}: ${p.deprecated}`).join("\n")); process.exit(1)}' "$RUNNER_TEMP/adapter-report.json"
+
+  propose_pins:
+    name: Propose verified default pins
+    needs: detect_and_probe
+    if: needs.detect_and_probe.outputs.updates == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          name: adapter-compatibility-report
+          path: ${{ runner.temp }}
+      - name: Apply only successfully probed releases
+        run: node scripts/adapter-maintenance.mjs apply --report "$RUNNER_TEMP/adapter-report.json"
+      - name: Install tmux for the release suite
+        run: sudo apt-get update && sudo apt-get install --yes tmux
+      - name: Validate generated defaults and complete plugin
+        run: npm run check && git diff --check
+      - name: Open or refresh the maintainer PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch="automation/adapter-pins"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$branch"
+          git add compatibility/adapters.json agents.json
+          git commit -m "chore: update verified ACP adapter pins"
+          git push --force origin "HEAD:$branch"
+          number="$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$number" ]; then
+            gh pr edit "$number" --title "chore: update verified ACP adapter pins" --body "Automated maintainer proposal. Candidates passed exact-package verification, ACP v1 initialization, and the required capability contract. This PR does not update user installations or merge itself."
+          else
+            gh pr create --head "$branch" --base "${{ github.event.repository.default_branch }}" --title "chore: update verified ACP adapter pins" --body "Automated maintainer proposal. Candidates passed exact-package verification, ACP v1 initialization, and the required capability contract. This PR does not update user installations or merge itself."
+          fi

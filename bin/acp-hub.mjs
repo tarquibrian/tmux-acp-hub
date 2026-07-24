@@ -21,6 +21,8 @@ import {
   mkdirp,
   readJsonIfExists,
   loadConfig,
+  configCredentialEnvNames,
+  redactCommandArgs,
   npxAdapterPin,
   compareSemver,
   parseNpmViewInfo,
@@ -68,9 +70,13 @@ import {
   tmuxActionCommand,
   tmuxConfirmActionCommand,
   tmuxRunWorkspace,
+  DEFAULT_CONFIG,
   HUB_DIR,
+  HUB_VERSION,
+  USER_CONFIG_PATH,
   SOCKET_PATH,
   PID_PATH,
+  RESTART_LOCK_PATH,
   LOG_PATH,
   STATE_PATH,
   REGISTRY_PATH,
@@ -86,8 +92,84 @@ import { HubDaemon } from "../lib/daemon.mjs";
 import {
   PopupUi,
 } from "../lib/ui.mjs";
+import {
+  AdapterVersionManager,
+  formatVersionState,
+} from "../lib/versions.mjs";
+import {
+  MCP_REGISTRY_PATH,
+  inspectMcpRegistry,
+  staticMcpDefinitions,
+  validateMcpDefinition,
+} from "../lib/mcp.mjs";
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
+const RESTART_LOCK_STALE_MS = 60_000;
+
+function readRestartLock() {
+  try {
+    return JSON.parse(fs.readFileSync(RESTART_LOCK_PATH, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function restartLockIsStale(lock, now = Date.now()) {
+  const startedAt = Number(lock?.startedAt) || 0;
+  return !startedAt || now - startedAt > RESTART_LOCK_STALE_MS;
+}
+
+function removeRestartLock(token = "") {
+  try {
+    const lock = readRestartLock();
+    if (token && lock?.token !== token) return false;
+    fs.unlinkSync(RESTART_LOCK_PATH);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForRestartCompletion(timeoutMs = 30_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (fs.existsSync(RESTART_LOCK_PATH)) {
+    const lock = readRestartLock();
+    if (restartLockIsStale(lock)) {
+      removeRestartLock(lock?.token || "");
+      break;
+    }
+    if (Date.now() >= deadline) {
+      throw new Error("ACP hub restart is still in progress; retry prefix+m in a moment");
+    }
+    await sleep(100);
+  }
+}
+
+function claimRestartLock() {
+  fs.mkdirSync(HUB_DIR, { recursive: true, mode: 0o700 });
+  const inheritedToken = String(process.env.ACP_HUB_RESTART_TOKEN || "");
+  const existing = readRestartLock();
+  if (inheritedToken && existing?.token === inheritedToken) {
+    fs.writeFileSync(
+      RESTART_LOCK_PATH,
+      JSON.stringify({ ...existing, token: inheritedToken, pid: process.pid, state: "running" }),
+      { mode: 0o600 },
+    );
+    return inheritedToken;
+  }
+  if (existing && !restartLockIsStale(existing)) {
+    throw new Error("ACP hub restart is already in progress");
+  }
+  if (existing) removeRestartLock(existing.token || "");
+
+  const token = crypto.randomUUID();
+  fs.writeFileSync(
+    RESTART_LOCK_PATH,
+    JSON.stringify({ token, pid: process.pid, state: "running", startedAt: Date.now() }),
+    { flag: "wx", mode: 0o600 },
+  );
+  return token;
+}
 
 // Keep the daemon log bounded: past 1MB the old log rolls to daemon.log.1
 // (one generation is enough to debug "what happened before the restart").
@@ -102,6 +184,7 @@ function rotateDaemonLog() {
 
 async function ensureDaemon() {
   await mkdirp(HUB_DIR);
+  await waitForRestartCompletion();
 
   try {
     return await connectHub(300);
@@ -613,9 +696,11 @@ function buildCommandCenterPanelItems(chat, context, cwd) {
     ...(chat.authMethods?.length
       ? [{ label: "Authenticate", key: "A", command: tmuxPanelCommand(cwd, context, "auth", chat.id) }]
       : []),
-    ...(chat.mcpServers?.length
-      ? [{ label: "MCP servers", key: "i", command: tmuxPanelCommand(cwd, context, "mcp", chat.id) }]
-      : []),
+    {
+      label: "MCP servers",
+      key: "i",
+      command: tmuxSubmitToPane(context.pane, "/mcp"),
+    },
     { label: "Access / permissions", key: "a", command: tmuxPanelCommand(cwd, context, "access", chat.id) },
     { label: "Workspace roots", key: "w", command: tmuxPanelCommand(cwd, context, "roots", chat.id) },
     { label: "New chat", key: "n", command: tmuxPanelCommand(cwd, context, "new", chat.id) },
@@ -771,7 +856,7 @@ function buildProviderCommandsPanelItems(chat, context) {
   if (!commands.length) {
     return [
       { label: "No provider commands reported by ACP yet", disabled: true },
-      { label: "You can still type //command manually", disabled: true },
+      { label: "Use /agent /command to send raw slash text", disabled: true },
     ];
   }
 
@@ -780,12 +865,21 @@ function buildProviderCommandsPanelItems(chat, context) {
     { separator: true },
   ];
 
-  for (const command of commands.slice(0, 30)) {
+  const visibleCommands = commands.slice(0, 24);
+  for (const command of visibleCommands) {
     const name = command.name || command.command || command.id || command.title || "command";
     const text = `//${String(name).replace(/^\/+/, "")}`;
     items.push({
       label: stripAnsi(formatProviderCommand(command)),
       command: tmuxInsertToPane(context.pane, text),
+    });
+  }
+
+  if (commands.length > visibleCommands.length) {
+    items.push({ separator: true });
+    items.push({
+      label: `Showing ${visibleCommands.length} of ${commands.length} · use /commands for the full searchable catalog`,
+      disabled: true,
     });
   }
 
@@ -855,6 +949,202 @@ function buildActivityPanelItems(context) {
   ];
 }
 
+function runHelp() {
+  console.log(`tmux-acp-hub ${HUB_VERSION}
+
+Usage:
+  acp-hub <command> [options]
+
+Commands:
+  ui             open the popup UI (normally launched by tmux)
+  health         check Node, tmux, state, config, and adapter pins
+  status         show daemon and saved-chat status
+  versions       show adapter, bundled runtime, and global CLI versions
+  updates        check configured adapters for available updates
+  update <agent> download, verify, and stage an adapter (or "all")
+  rollback <id>  stage the previous verified adapter
+  restart        restart the daemon and close disposable workspace views
+  stop           stop the daemon without deleting saved chats
+  reset [--yes]  delete every saved chat and local composer state
+  help           show this help
+  version        print the plugin version
+
+Common options:
+  --cwd <path>       project directory for UI/tmux commands
+  --agent <id>       provider id for a chat
+  --chat-id <id>     reopen a specific chat
+  --new              create a fresh provider session
+
+Inside tmux, install the plugin and use prefix+m. Run "acp-hub health"
+when reporting a startup or adapter problem.`);
+}
+
+function printAdapterVersions(result) {
+  console.log(`ACP protocol: v1 · channel: ${result.settings?.channel || "stable"}`);
+  for (const state of result.providers || []) {
+    console.log(formatVersionState(state));
+    const selectedVersion = state.pendingVersion || state.activeVersion;
+    const selected = (state.installed || []).find((entry) => entry.version === selectedVersion);
+    for (const [name, version] of Object.entries(selected?.dependencies || {})) {
+      console.log(`  runtime ${name}@${version}`);
+    }
+    if (state.globalCli) {
+      console.log(
+        `  global ${state.globalCli.command}@${state.globalCli.version || "unknown"} · ${state.globalCli.path}`,
+      );
+    }
+    if (state.deprecated) console.log(`  DEPRECATED: ${state.deprecated}`);
+    if (state.registryError) {
+      console.log(`  registry unavailable${state.registryStale ? "; cached result shown" : ""}`);
+    }
+  }
+}
+
+async function versionBackend(config, method, params = {}, options = {}) {
+  let hub = null;
+  try {
+    hub = await connectHub(250);
+  } catch {
+    // A stopped daemon is a supported maintenance state. Operate directly on
+    // the same locked store; the next daemon start promotes pending versions.
+  }
+  if (hub) {
+    if (options.onProgress) {
+      hub.onEvent((message) => {
+        if (message.type === "adapter_update_progress") options.onProgress(message.update || {});
+      });
+    }
+    try {
+      return await hub.call(method, params);
+    } catch (error) {
+      if (!/Unknown hub method: adapter_/i.test(String(error.message || error))) throw error;
+      // A daemon from the previous plugin build cannot service version RPCs.
+      // Falling through is safe: it has no version manager of its own, and the
+      // shared store lock still protects direct maintenance.
+    } finally {
+      hub.close();
+    }
+  }
+  const manager = new AdapterVersionManager({ config });
+  if (method === "adapter_versions") return manager.versions(params);
+  if (method === "adapter_update") {
+    const updateOptions = {
+      force: params.force === true,
+      onProgress: options.onProgress,
+    };
+    return params.provider === "all"
+      ? manager.updateAll(updateOptions)
+      : manager.update(params.provider, updateOptions);
+  }
+  if (method === "adapter_rollback") return manager.rollback(params.provider);
+  throw new Error(`unsupported version backend method: ${method}`);
+}
+
+async function runAdapterVersions(args, check = false) {
+  const config = await loadConfig();
+  const result = await versionBackend(config, "adapter_versions", {
+    check,
+    force: check,
+    globals: true,
+  });
+  if (args.json === true) console.log(JSON.stringify(result, null, 2));
+  else printAdapterVersions(result);
+}
+
+async function confirmCliMutation(args, prompt) {
+  if (args.yes === true) return true;
+  if (!process.stdin.isTTY) {
+    console.error(`${prompt}; run interactively or pass --yes`);
+    process.exitCode = 2;
+    return false;
+  }
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const answer = await rl.question(`${prompt} [y/N] `);
+  rl.close();
+  return /^y(es)?$/i.test(answer.trim());
+}
+
+function printUpdateProgress(update) {
+  const labels = {
+    download: "downloading",
+    verify: "verifying cached install",
+    handshake: "testing ACP handshake",
+    ready: "ready",
+  };
+  console.log(`${update.provider || "adapter"}@${update.version || "?"}: ${labels[update.phase] || update.phase}`);
+}
+
+async function runAdapterUpdate(args) {
+  const config = await loadConfig();
+  const provider = String(args._[0] || "").toLowerCase();
+  if (!provider) {
+    console.error("usage: acp-hub update <agent|all> [--yes] [--restart]");
+    process.exitCode = 2;
+    return;
+  }
+  if (provider !== "all" && !config.agents?.[provider]) {
+    console.error(`unknown agent: ${provider}`);
+    process.exitCode = 2;
+    return;
+  }
+  if (!(await confirmCliMutation(args, `Download, verify, and stage ${provider}?`))) {
+    console.log("aborted — nothing changed");
+    return;
+  }
+  const result = await versionBackend(
+    config,
+    "adapter_update",
+    { provider, force: true },
+    { onProgress: args.json === true ? null : printUpdateProgress },
+  );
+  if (args.json === true) {
+    console.log(JSON.stringify(result, null, 2));
+  } else {
+    for (const item of result.results || [result]) {
+      const version = item.pendingVersion || item.activeVersion;
+      console.log(item.alreadyCurrent
+        ? `✓ ${item.provider}@${version} is already active`
+        : item.alreadyPending
+          ? `✓ ${item.provider}@${version} is already staged`
+          : `✓ ${item.provider}@${version} verified and staged`);
+    }
+    for (const failure of result.errors || []) {
+      console.error(`✗ ${failure.provider}: ${failure.error}`);
+    }
+    if (!result.requiresRestart && (result.results || [result]).every((item) => !item.requiresRestart)) {
+      console.log("no restart required");
+    } else if (result.busyChats?.length) {
+      console.log(`restart deferred: ${result.busyChats.length} chat(s) are active`);
+    } else {
+      console.log("run acp-hub restart to activate the staged version");
+    }
+  }
+  if (result.errors?.length) process.exitCode = 1;
+  if (args.restart === true && result.requiresRestart !== false && !result.busyChats?.length) await runRestart();
+}
+
+async function runAdapterRollback(args) {
+  const config = await loadConfig();
+  const provider = String(args._[0] || "").toLowerCase();
+  if (!provider || !config.agents?.[provider]) {
+    console.error("usage: acp-hub rollback <agent> [--yes] [--restart]");
+    process.exitCode = 2;
+    return;
+  }
+  if (!(await confirmCliMutation(args, `Stage the previous verified ${provider} adapter?`))) {
+    console.log("aborted — nothing changed");
+    return;
+  }
+  const result = await versionBackend(config, "adapter_rollback", { provider });
+  if (args.json === true) console.log(JSON.stringify(result, null, 2));
+  else console.log(`✓ ${provider}@${result.pendingVersion} staged for rollback; restart to activate`);
+  if (args.restart === true && !result.busyChats?.length) await runRestart();
+}
+
+function runVersion() {
+  console.log(HUB_VERSION);
+}
+
 async function runStatus() {
   const state = await readJsonIfExists(STATE_PATH);
   if (!state) {
@@ -881,6 +1171,7 @@ async function runStatus() {
 async function runHealth() {
   const ok = (label, value) => console.log(`✓ ${label}: ${value}`);
   const bad = (label, value) => console.log(`✗ ${label}: ${value}`);
+  const warn = (label, value) => console.log(`⚠ ${label}: ${value}`);
 
   const nodeMajor = Number(process.versions.node.split(".")[0]);
   const nodeNote =
@@ -919,6 +1210,65 @@ async function runHealth() {
   console.log(`${daemonUp ? "✓" : "·"} daemon: ${daemonUp ? "running" : "stopped (starts on demand)"} ${SOCKET_PATH}`);
 
   const config = await loadConfig();
+  const managedMcp = inspectMcpRegistry(MCP_REGISTRY_PATH);
+  if (!managedMcp.ok) {
+    bad("MCP registry", `${managedMcp.file} is invalid (${managedMcp.error})`);
+  } else if (managedMcp.exists) {
+    const modeLabel = managedMcp.mode?.toString(8).padStart(3, "0") || "unknown";
+    if (managedMcp.mode !== null && managedMcp.mode & 0o077) {
+      warn(
+        "MCP registry permissions",
+        `${managedMcp.file} is ${modeLabel}; run chmod 600`,
+      );
+    } else {
+      ok(
+        "MCP registry",
+        `${managedMcp.count} managed server(s) · ${managedMcp.file} · ${modeLabel}`,
+      );
+    }
+  } else {
+    ok("MCP registry", `not created · use /mcp to manage servers`);
+  }
+  const staticMcp = staticMcpDefinitions(config);
+  const invalidStaticMcp = staticMcp
+    .map((server) => ({
+      name: server.name || "(unnamed)",
+      validation: validateMcpDefinition(server, { source: "static", touch: false }),
+    }))
+    .filter((entry) => !entry.validation.ok);
+  if (invalidStaticMcp.length) {
+    bad(
+      "static MCP config",
+      invalidStaticMcp
+        .map((entry) => `${entry.name}: ${entry.validation.errors.join("; ")}`)
+        .join(" · "),
+    );
+  } else {
+    ok("static MCP config", `${staticMcp.length} valid server(s)`);
+  }
+  const versionManager = new AdapterVersionManager({ config });
+  const versionSnapshot = await versionManager.versions({ check: false });
+  const versionStates = new Map(
+    versionSnapshot.providers.map((state) => [state.provider, state]),
+  );
+  const userConfig = await readJsonIfExists(USER_CONFIG_PATH);
+  const credentialNames = configCredentialEnvNames(userConfig);
+  if (credentialNames.length) {
+    try {
+      const mode = fs.statSync(USER_CONFIG_PATH).mode & 0o777;
+      const modeLabel = mode.toString(8).padStart(3, "0");
+      if (mode & 0o077) {
+        warn(
+          "config permissions",
+          `${USER_CONFIG_PATH} contains credential-like env values and is ${modeLabel}; run chmod 600`,
+        );
+      } else {
+        ok("config permissions", `${USER_CONFIG_PATH} is ${modeLabel}`);
+      }
+    } catch (error) {
+      warn("config permissions", `could not inspect ${USER_CONFIG_PATH}: ${error.message}`);
+    }
+  }
   for (const [name, agent] of Object.entries(config.agents || {})) {
     const command = agent?.command;
     if (!command) {
@@ -928,13 +1278,68 @@ async function runHealth() {
     const which = spawnSync("sh", ["-c", `command -v ${JSON.stringify(command)}`], { encoding: "utf8" });
     (which.status === 0 ? ok : bad)(
       `agent ${name}`,
-      which.status === 0 ? `${command} ${(agent.args || []).join(" ")}`.trim() : `${command} not found in PATH`,
+      which.status === 0
+        ? `${command} ${redactCommandArgs(agent.args).join(" ")}`.trim()
+        : `${command} not found in PATH`,
     );
+  }
+
+  for (const state of versionSnapshot.providers) {
+    if (!state.managed) continue;
+    if (state.pendingVersion) {
+      warn(
+        `agent ${state.provider} activation`,
+        `${state.pendingVersion} verified and pending; run acp-hub restart`,
+      );
+      continue;
+    }
+    if (state.activeVersion) {
+      const resolved = versionManager.resolveAgent(
+        state.provider,
+        config.agents[state.provider],
+        versionSnapshot.manifest,
+      );
+      if (resolved.managedAdapter) {
+        const runtimes = Object.entries(resolved.managedAdapter.dependencies || {})
+          .map(([pkg, version]) => `${pkg}@${version}`)
+          .join(", ");
+        ok(
+          `agent ${state.provider} managed`,
+          `${resolved.managedAdapter.package}@${state.activeVersion}${runtimes ? ` (${runtimes})` : ""}`,
+        );
+      } else {
+        warn(
+          `agent ${state.provider} managed`,
+          `${state.activeVersion} is recorded but incomplete; falling back to configured command`,
+        );
+      }
+    } else {
+      ok(
+        `agent ${state.provider} managed`,
+        `not prepared; using exact npx pin ${state.configuredVersion}`,
+      );
+    }
+  }
+
+  for (const [provider, override] of Object.entries(userConfig?.agents || {})) {
+    if (!Object.hasOwn(override || {}, "args") && !Object.hasOwn(override || {}, "command")) continue;
+    const inheritedPin = npxAdapterPin(DEFAULT_CONFIG.agents?.[provider]);
+    const effectivePin = npxAdapterPin(config.agents?.[provider]);
+    if (
+      inheritedPin &&
+      (!effectivePin ||
+        effectivePin.pkg !== inheritedPin.pkg ||
+        effectivePin.version !== inheritedPin.version)
+    ) {
+      warn(
+        `agent ${provider} override`,
+        `${USER_CONFIG_PATH} owns this command/pin; plugin defaults will not replace it`,
+      );
+    }
   }
 
   // Adapter pin currency: compare npx-style pins against the npm registry.
   // Being offline is not a health failure — registry errors skip silently.
-  const warn = (label, value) => console.log(`⚠ ${label}: ${value}`);
   for (const [name, agent] of Object.entries(config.agents || {})) {
     const pin = npxAdapterPin(agent);
     if (!pin) continue;
@@ -945,12 +1350,14 @@ async function runHealth() {
     if (view.status !== 0 || !view.stdout) continue;
     const info = parseNpmViewInfo(view.stdout);
     if (!info) continue;
+    const state = versionStates.get(name);
+    const effectiveVersion = state?.pendingVersion || state?.activeVersion || pin.version;
     if (info.deprecated) {
       warn(`agent ${name} pin`, `${pin.pkg} is DEPRECATED: ${info.deprecated}`);
-    } else if (info.latest && compareSemver(pin.version, info.latest) < 0) {
-      warn(`agent ${name} pin`, `${pin.pkg} pinned ${pin.version}, latest ${info.latest}`);
+    } else if (info.latest && compareSemver(effectiveVersion, info.latest) < 0) {
+      warn(`agent ${name} pin`, `${pin.pkg} active ${effectiveVersion}, latest ${info.latest}`);
     } else if (info.latest) {
-      ok(`agent ${name} pin`, `${pin.pkg}@${pin.version} is latest`);
+      ok(`agent ${name} pin`, `${pin.pkg}@${effectiveVersion} is latest`);
     }
   }
 }
@@ -1085,14 +1492,19 @@ function killWorkspaceSessions() {
 // Soft recovery: bounce the daemon and clear the tmux views. Chats survive —
 // they live in the registry, which the next daemon start reloads.
 async function runRestart() {
-  const how = await stopDaemonHard();
-  removeRuntimeFiles();
-  const killed = killWorkspaceSessions();
+  const token = claimRestartLock();
+  try {
+    const how = await stopDaemonHard();
+    removeRuntimeFiles();
+    const killed = killWorkspaceSessions();
 
-  console.log(`daemon: ${how}`);
-  console.log(`workspace sessions closed: ${killed}`);
-  console.log(`chats kept in ${REGISTRY_PATH}`);
-  console.log("reopen with prefix+m — the daemon restarts on demand");
+    console.log(`daemon: ${how}`);
+    console.log(`workspace sessions closed: ${killed}`);
+    console.log(`chats kept in ${REGISTRY_PATH}`);
+    console.log("reopen with prefix+m — the daemon restarts on demand");
+  } finally {
+    removeRestartLock(token);
+  }
 }
 
 // Hard recovery: everything runRestart does, plus wiping all persisted chats
@@ -1172,6 +1584,16 @@ async function main() {
   const args = parseArgs(rest);
 
   switch (command) {
+    case "help":
+    case "--help":
+    case "-h":
+      runHelp();
+      break;
+    case "version":
+    case "--version":
+    case "-v":
+      runVersion();
+      break;
     case "daemon":
       await runDaemon();
       break;
@@ -1187,6 +1609,18 @@ async function main() {
       break;
     case "status":
       await runStatus();
+      break;
+    case "versions":
+      await runAdapterVersions(args, false);
+      break;
+    case "updates":
+      await runAdapterVersions(args, true);
+      break;
+    case "update":
+      await runAdapterUpdate(args);
+      break;
+    case "rollback":
+      await runAdapterRollback(args);
       break;
     case "project-chat":
       await runProjectChat(args);
@@ -1220,12 +1654,24 @@ async function main() {
       break;
     default:
       console.error(`Unknown command: ${command}`);
+      console.error("Run acp-hub --help for usage.");
       process.exitCode = 2;
   }
 }
 
-const invokedDirectly =
-  process.argv[1] && path.resolve(process.argv[1]) === SCRIPT_PATH;
+function sameExecutablePath(candidate, target) {
+  if (!candidate) return false;
+  try {
+    return fs.realpathSync(candidate) === fs.realpathSync(target);
+  } catch {
+    return path.resolve(candidate) === path.resolve(target);
+  }
+}
+
+// npm exposes package binaries through a symlink in node_modules/.bin. Resolve
+// both sides so the installed `acp-hub` command enters main just like calling
+// bin/acp-hub.mjs directly.
+const invokedDirectly = sameExecutablePath(process.argv[1], SCRIPT_PATH);
 
 if (invokedDirectly) {
   main().catch((error) => {
@@ -1244,4 +1690,3 @@ export {
   formatChatPreview,
   highlightCode,
 };
-

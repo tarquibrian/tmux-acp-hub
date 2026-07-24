@@ -1,11 +1,23 @@
 {
   "name": "tmux-acp-hub",
-  "version": "0.1.0",
+  "version": "0.2.0",
+  "private": true,
   "description": "ACP Hub — a persistent multi-agent hub for tmux: Codex, Claude Code, and any Agent Client Protocol agent in popups, with saved transcripts",
   "type": "module",
   "bin": {
     "acp-hub": "bin/acp-hub.mjs"
   },
+  "files": [
+    "acp-hub.tmux",
+    "agents.json",
+    "assets/*.svg",
+    "bin/",
+    "CHANGELOG.md",
+    "compatibility/",
+    "lib/",
+    "MAINTENANCE.md",
+    "scripts/"
+  ],
   "keywords": [
     "tmux",
     "tmux-plugin",
@@ -30,6 +42,13 @@
     "node": ">=18"
   },
   "scripts": {
-    "test": "node tests/picker.mjs && node tests/composer-layout.mjs && node tests/autocomplete.mjs && node tests/highlight.mjs && node tests/render-width.mjs && node tests/render-stream.mjs && node tests/render-live-table.mjs && node tests/rpc.mjs && node tests/reset.mjs && node tests/diff.mjs && node tests/health.mjs && node tests/vim.mjs && node tests/smoke.mjs"
+    "prepublishOnly": "node -e \"console.error('tmux-acp-hub is distributed from GitHub/TPM, not npm'); process.exit(1)\"",
+    "test": "node tests/release.mjs && node tests/theme.mjs && node tests/versions.mjs && node tests/adapter-maintenance.mjs && node tests/adapter-operations.mjs && node tests/mcp-admin.mjs && node tests/picker.mjs && node tests/composer-layout.mjs && node tests/plan-panel.mjs && node tests/permissions.mjs && node tests/prompt-lifecycle.mjs && node tests/message-roles.mjs && node tests/command-system.mjs && node tests/turn-cards.mjs && node tests/turn-card-render.mjs && node tests/frame-render.mjs && node tests/history-retention.mjs && node tests/scroll.mjs && node tests/autocomplete.mjs && node tests/highlight.mjs && node tests/render-width.mjs && node tests/titles.mjs && node tests/user-turn-render.mjs && node tests/global-layout.mjs && node tests/render-stream.mjs && node tests/render-live-table.mjs && node tests/rpc.mjs && node tests/reset.mjs && node tests/diff.mjs && node tests/health.mjs && node tests/status-counts.mjs && node tests/vim.mjs && node tests/smoke.mjs",
+    "check:syntax": "node --check bin/acp-hub.mjs && node --check lib/core.mjs && node --check lib/daemon.mjs && node --check lib/mcp.mjs && node --check lib/render.mjs && node --check lib/rpc.mjs && node --check lib/theme.mjs && node --check lib/ui.mjs && node --check lib/versions.mjs && node --check scripts/adapter-maintenance.mjs && sh -n acp-hub.tmux && sh -n scripts/apply-status-format.sh && sh -n scripts/close-menu.sh && sh -n scripts/lib.sh && sh -n scripts/resurrect-exclude.sh && sh -n scripts/switcher.sh && sh -n scripts/tmux-menu.sh && sh -n scripts/workspace.sh",
+    "check": "npm run check:syntax && npm test",
+    "adapters:check": "node scripts/adapter-maintenance.mjs check",
+    "adapters:matrix": "node scripts/adapter-maintenance.mjs matrix --github",
+    "adapters:probe": "node scripts/adapter-maintenance.mjs probe",
+    "adapters:sync": "node scripts/adapter-maintenance.mjs sync --check"
   }
 }

@@ -40,6 +40,11 @@ if is_acp_session "$CURRENT_SESSION"; then
   fi
 fi
 
+# Do not create a session that the detached `/restart` cleanup is about to
+# remove. The binding waits in the normal tmux pane and opens only after the
+# restart transaction has released its marker.
+wait_for_hub_restart || exit 0
+
 PROJECT_PATH="$(project_root "$CURRENT_PATH")"
 SESSION="$(acp_session_name "$PROJECT_PATH")"
 [ -n "$PROVIDER" ] || PROVIDER="$(default_agent)"

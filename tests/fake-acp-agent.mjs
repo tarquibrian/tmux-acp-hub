@@ -8,6 +8,7 @@ let currentMode = "test";
 let currentModel = "fake-small";
 let currentEffort = "low";
 const requireAuth = process.env.FAKE_REQUIRE_AUTH === "1";
+const noRestore = process.env.FAKE_NO_RESTORE === "1";
 let authed = false;
 
 process.stdin.setEncoding("utf8");
@@ -53,8 +54,7 @@ async function handleMessage(message) {
           close: {},
           delete: {},
           list: {},
-          load: {},
-          resume: {},
+          ...(noRestore ? {} : { load: {}, resume: {} }),
         },
       },
       authMethods: requireAuth
@@ -96,6 +96,7 @@ async function handleMessage(message) {
         ],
       },
       configOptions: configOptions(),
+      availableCommands: availableCommands(),
     });
     return;
   }
@@ -121,6 +122,31 @@ async function handleMessage(message) {
   }
 
   if (message.method === "session/load" || message.method === "session/resume") {
+    if (process.env.FAKE_RESTORE_FAILURE === "1") {
+      respondError(message.id, -32603, "Internal error");
+      return;
+    }
+    if (
+      process.env.FAKE_FAIL_MCP_NAME &&
+      message.params?.mcpServers?.some(
+        (server) => server.name === process.env.FAKE_FAIL_MCP_NAME,
+      )
+    ) {
+      respondError(message.id, -32603, `Rejected MCP server ${process.env.FAKE_FAIL_MCP_NAME}`);
+      return;
+    }
+    const expectedMcpArgumentSecret = process.env.FAKE_EXPECT_MCP_ARG_SECRET;
+    const managedMcp = message.params?.mcpServers?.find(
+      (server) => server.name === "managed-echo",
+    );
+    if (
+      expectedMcpArgumentSecret &&
+      managedMcp &&
+      !managedMcp.args?.includes(expectedMcpArgumentSecret)
+    ) {
+      respondError(message.id, -32000, "Expected private MCP argument payload");
+      return;
+    }
     if (message.params.sessionId === "listed-session" && process.env.FAKE_EXTRA_DIR) {
       if (!message.params.additionalDirectories?.includes(process.env.FAKE_EXTRA_DIR)) {
         respondError(message.id, -32000, "Expected additionalDirectories for listed-session");
@@ -140,6 +166,7 @@ async function handleMessage(message) {
         ],
       },
       configOptions: configOptions(),
+      availableCommands: availableCommands(),
     });
     return;
   }
@@ -181,6 +208,38 @@ async function handleMessage(message) {
       .map((part) => part?.text || "")
       .join("\n");
 
+    const titleMatch = promptText.match(/^agent title:\s*(.*)$/iu);
+    if (titleMatch) {
+      notify("session/update", {
+        sessionId: currentSessionId || "fake-session",
+        update: {
+          sessionUpdate: "session_info_update",
+          title: titleMatch[1] || null,
+          updatedAt: new Date().toISOString(),
+        },
+      });
+      respond(message.id, { stopReason: "end_turn" });
+      return;
+    }
+
+    if (/^\/status(?:\s|$)/i.test(promptText)) {
+      notify("session/update", {
+        sessionId: currentSessionId || "fake-session",
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          messageId: "fake-status",
+          content: { type: "text", text: `Fake status: mode=${currentMode}` },
+        },
+      });
+      respond(message.id, { stopReason: "end_turn" });
+      return;
+    }
+
+    if (/^\/compact(?:\s|$)/i.test(promptText)) {
+      respond(message.id, { stopReason: "end_turn" });
+      return;
+    }
+
     if (/attachment/i.test(promptText)) {
       const summary = prompt
         .filter((part) => part.type !== "text")
@@ -214,7 +273,7 @@ async function handleMessage(message) {
           sessionUpdate: "agent_message_chunk",
           content: {
             type: "text",
-            text: "| Carpeta | Archivos | Qué contiene |\n",
+            text: "| Area | Files | Contents |\n",
           },
         },
       });
@@ -224,7 +283,7 @@ async function handleMessage(message) {
           sessionUpdate: "agent_message_chunk",
           content: {
             type: "text",
-            text: "|---|---:|---|\n| tmux/ | 425 | Configs, scripts y plugins |\n| nvim/ | 30 | Configuración de Neovim |",
+            text: "|---|---:|---|\n| tmux/ | 425 | Config, scripts, and plugins |\n| nvim/ | 30 | Neovim configuration |",
           },
         },
       });
@@ -246,6 +305,33 @@ async function handleMessage(message) {
         },
       });
       respond(message.id, { stopReason: "end_turn" });
+      return;
+    }
+
+    if (/plan permission/i.test(promptText)) {
+      notify("session/update", {
+        sessionId: currentSessionId || "fake-session",
+        update: {
+          sessionUpdate: "plan",
+          entries: [
+            { content: "Inspect permission", priority: "high", status: "in_progress" },
+            { content: "Apply protected change", priority: "medium", status: "pending" },
+          ],
+        },
+      });
+      const permission = await request("session/request_permission", {
+        sessionId: currentSessionId || "fake-session",
+        toolCall: {
+          toolCallId: "fake-plan-tool",
+          title: "Fake planned edit",
+          kind: "edit",
+        },
+        options: [
+          { optionId: "allow", name: "Allow", kind: "allow_once" },
+          { optionId: "reject", name: "Reject", kind: "reject_once" },
+        ],
+      });
+      respond(message.id, { stopReason: permission?.outcome?.outcome || "unknown" });
       return;
     }
 
@@ -382,6 +468,33 @@ function configOptions() {
         { value: "restored", name: "Restored" },
       ],
     },
+  ];
+}
+
+function availableCommands() {
+  return [
+    {
+      name: "status",
+      description: "Show fake session status",
+      input: { hint: "[section]" },
+    },
+    { name: "usage", description: "Refresh context usage" },
+    { name: "compact", description: "Compact fake context" },
+    {
+      name: "plan",
+      description: "Enter provider plan mode",
+      _meta: {
+        commandAction: {
+          kind: "setConfigOption",
+          configId: "mode",
+          value: "plan",
+          resetValue: "test",
+          presentation: "state",
+        },
+      },
+    },
+    { name: "review", description: "Run a fake review", input: { hint: "<target>" } },
+    { name: "$fake-skill", description: "Invoke a fake skill" },
   ];
 }
 

@@ -5,7 +5,11 @@ import assert from "node:assert/strict";
 import {
   stringDisplayWidth,
   charDisplayWidth,
+  layoutAnsiText,
+  layoutEditableLine,
+  textOffsetAtDisplayColumn,
   wrapAnsiLine,
+  wrapAnsiWords,
   truncateAnsiToWidth,
   stripAnsi,
 } from "../lib/render.mjs";
@@ -33,6 +37,76 @@ assert.deepEqual(wrapAnsiLine("abcdef", 3), ["abc", "def"]);
 assert.deepEqual(wrapAnsiLine("abcd", 3), ["abc", "d"]);
 assert.deepEqual(wrapAnsiLine("", 10), [""], "empty line keeps one blank row");
 assert.deepEqual(wrapAnsiLine("ab", 10), ["ab"], "short line does not wrap");
+assert.deepEqual(
+  layoutAnsiText("abcdef", 3, { mode: "hard" }),
+  wrapAnsiLine("abcdef", 3),
+  "hard adapter delegates to the shared layout engine",
+);
+assert.equal(strip(layoutAnsiText("abcdef", 4, { mode: "truncate" })[0]), "abc…");
+
+// wrapAnsiWords: prose moves a whole word when it would cross the edge.
+assert.deepEqual(wrapAnsiWords("123456789012 palabra final", 16), [
+  "123456789012",
+  "palabra final",
+]);
+assert.deepEqual(wrapAnsiWords("one two three", 7), ["one two", "three"]);
+assert.deepEqual(wrapAnsiWords("one    two", 8), ["one", "two"], "boundary whitespace is dropped");
+assert.deepEqual(
+  layoutAnsiText("one two three", 7, { mode: "word" }),
+  wrapAnsiWords("one two three", 7),
+  "word adapter delegates to the shared layout engine",
+);
+assert.deepEqual(
+  layoutAnsiText("permission", 1, { mode: "word", continuationWidth: 10 }),
+  ["", "permission"],
+  "a long prefix may yield before a word that fits the continuation",
+);
+
+// Only a token wider than a complete row falls back to a hard wrap.
+assert.deepEqual(wrapAnsiWords("abcdefghijkl", 5), ["abcde", "fghij", "kl"]);
+
+// ANSI state survives a word boundary just like it does in the hard wrapper.
+{
+  const green = "\x1b[32m";
+  const reset = "\x1b[0m";
+  const rows = wrapAnsiWords(`${green}alpha beta${reset}`, 5);
+  assert.deepEqual(rows.map(strip), ["alpha", "beta"]);
+  assert.ok(rows[0].startsWith(green));
+  assert.ok(rows[0].endsWith(reset));
+  assert.ok(rows[1].startsWith(green), "continuation re-opens the active style");
+}
+
+// Editable word layout keeps source ranges while omitting soft-boundary space.
+{
+  const text = "123456789012 palabra final";
+  const rows = layoutEditableLine(text, 16);
+  assert.deepEqual(rows.map((row) => row.text), ["123456789012", "palabra final"]);
+  assert.deepEqual(rows.map(({ start, end }) => [start, end]), [[0, 13], [13, 26]]);
+  assert.equal(rows[0].contentEnd, 12, "separator stays mapped but is not rendered");
+  assert.equal(rows[0].end, rows[1].start, "editable source ranges stay contiguous");
+  assert.equal(textOffsetAtDisplayColumn("日ab", 2), 1, "display columns map back to code units");
+
+  const trailing = layoutEditableLine("palabra   ", 16);
+  assert.deepEqual(trailing.map((row) => row.text), ["palabra   "]);
+  assert.equal(trailing[0].width, 10, "typed trailing spaces occupy cursor columns");
+
+  const trailingWrap = layoutEditableLine("1234 ", 4);
+  assert.deepEqual(trailingWrap.map((row) => row.text), ["1234", " "]);
+  assert.deepEqual(
+    trailingWrap.map(({ start, end }) => [start, end]),
+    [[0, 4], [4, 5]],
+    "a trailing space crossing the edge gets its own source-mapped row",
+  );
+
+  const unicode = layoutEditableLine("ab 日本語 palabra", 7);
+  assert.ok(unicode.every((row) => stringDisplayWidth(row.text) <= 7));
+  assert.ok(unicode.every((row, index) => index === 0 || unicode[index - 1].end === row.start));
+  assert.deepEqual(layoutEditableLine("abcdefghijkl", 5).map((row) => row.text), [
+    "abcde",
+    "fghij",
+    "kl",
+  ]);
+}
 
 // wrapAnsiLine: wide chars never split across a column boundary
 {

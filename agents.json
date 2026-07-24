@@ -4,12 +4,18 @@
     "codex": {
       "label": "Codex ACP",
       "command": "npx",
-      "args": ["-y", "@agentclientprotocol/codex-acp@1.1.4"]
+      "args": [
+        "-y",
+        "@agentclientprotocol/codex-acp@1.1.7"
+      ]
     },
     "claude": {
       "label": "Claude ACP",
       "command": "npx",
-      "args": ["-y", "@agentclientprotocol/claude-agent-acp@0.59.0"]
+      "args": [
+        "-y",
+        "@agentclientprotocol/claude-agent-acp@0.61.0"
+      ]
     }
   }
 }

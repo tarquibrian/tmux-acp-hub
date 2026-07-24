@@ -85,6 +85,8 @@ const socketPath = path.join(hubHome, "hub.sock");
 const configPath = path.join(tmp, "agents.json");
 const projectPath = path.join(tmp, "project");
 const extraPath = path.join(tmp, "extra-root");
+const mcpArgumentSecret = "mcp-rpc-argument-secret-canary";
+const mcpUrlSecret = "mcp-rpc-query-secret-canary";
 
 await fs.mkdir(projectPath, { recursive: true });
 await fs.mkdir(extraPath, { recursive: true });
@@ -105,14 +107,37 @@ await fs.writeFile(
           args: [FAKE_AGENT],
           env: { FAKE_REQUIRE_AUTH: "1" },
         },
+        fakerestore: {
+          label: "Fake Restore ACP",
+          command: process.execPath,
+          args: [FAKE_AGENT],
+          env: { FAKE_RESTORE_FAILURE: "1" },
+        },
         fakemcp: {
           label: "Fake MCP ACP",
           command: process.execPath,
           args: [FAKE_AGENT],
           mcpServers: [
             { name: "echo-mcp", command: "node", args: ["-e", "0"], env: {} },
-            { name: "gated-mcp", type: "http", url: "https://example.test/mcp", headers: {} },
+            {
+              name: "gated-mcp",
+              type: "http",
+              url: `https://example.test/mcp?access_token=${mcpUrlSecret}`,
+              headers: {},
+            },
           ],
+        },
+        fakemcpnew: {
+          label: "Fake MCP New Session ACP",
+          command: process.execPath,
+          args: [FAKE_AGENT],
+          env: { FAKE_NO_RESTORE: "1" },
+        },
+        fakemcprollback: {
+          label: "Fake MCP Rollback ACP",
+          command: process.execPath,
+          args: [FAKE_AGENT],
+          env: { FAKE_FAIL_MCP_NAME: "broken-mcp" },
         },
       },
     },
@@ -126,8 +151,13 @@ const env = {
   ACP_HUB_HOME: hubHome,
   ACP_HUB_SOCKET: socketPath,
   ACP_HUB_CONFIG: configPath,
+  ACP_HUB_MCP_CONFIG: path.join(tmp, "mcp.json"),
+  ACP_HUB_TITLE_POLICY: "agent-first",
+  ACP_HUB_TAB_TITLE_MAX_WIDTH: "32",
   FAKE_EXPECT_CWD: projectPath,
   FAKE_EXTRA_DIR: extraPath,
+  MCP_SECRET_TEST: "never-expose-this",
+  FAKE_EXPECT_MCP_ARG_SECRET: mcpArgumentSecret,
 };
 
 const daemonLogs = [];
@@ -137,6 +167,13 @@ try {
   const hub = await connectWithRetry(socketPath);
   const events = [];
   hub.onEvent((event) => events.push(event));
+
+  const adapterVersions = await hub.call("adapter_versions");
+  assert.equal(adapterVersions.settings.channel, "stable");
+  assert.equal(
+    adapterVersions.providers.find((provider) => provider.provider === "fake")?.state,
+    "unmanaged",
+  );
 
   const chat = await hub.call("ensure_chat", { provider: "fake", cwd: projectPath });
   assert.equal(chat.status, "idle");
@@ -275,7 +312,13 @@ try {
   const actionRename = await hub.call("subscribe", { chatId: chat.id });
   assert.equal(actionRename.chat.title, `Bob's "fake" chat`);
 
-  await hub.call("send_prompt", { chatId: chat.id, text: "trigger permission" });
+  const activeSubmission = await hub.call("send_prompt", {
+    chatId: chat.id,
+    text: "plan permission",
+    clientPromptId: "smoke-active-prompt",
+  });
+  assert.equal(activeSubmission.clientPromptId, "smoke-active-prompt");
+  assert.ok(activeSubmission.turnSequence > 0);
   await waitFor(() => events.some((event) => event.event === "permission_request"));
 
   // A pending permission must survive a popup close and be re-surfaced when the
@@ -284,20 +327,56 @@ try {
   const resubscribe = await hub.call("subscribe", { chatId: chat.id });
   assert.ok(resubscribe.pendingPermission, "subscribe should surface the pending permission");
   assert.equal(resubscribe.pendingPermission.permissionId, permEvent.permissionId);
-  // The manual rename is pinned: sending a prompt must NOT replace it with the
-  // per-prompt provisional title.
+  // The manual rename owns the title: neither prompts nor ACP may replace it.
   assert.equal(resubscribe.chat.title, `Bob's "fake" chat`, "pinned title survives prompts");
 
   // promptQueueing: a prompt sent while the turn is still active is queued, not
   // rejected; cancelling the turn drops the queued prompts.
-  const queuedWhileBusy = await hub.call("send_prompt", { chatId: chat.id, text: "queued while busy" });
+  const queuedWhileBusy = await hub.call("send_prompt", {
+    chatId: chat.id,
+    text: "queued while busy",
+    clientPromptId: "smoke-queued-prompt",
+  });
   assert.equal(queuedWhileBusy.queued, true);
   assert.equal(queuedWhileBusy.queueLength, 1);
   assert.equal(queuedWhileBusy.chat.queued, 1);
+  assert.deepEqual(queuedWhileBusy.chat.queuedRequests.map((item) => item.preview), [
+    "queued while busy",
+  ]);
+  const commandWhileBusy = await hub.call("execute_provider_command", {
+    chatId: chat.id,
+    command: "/compact",
+    clientCommandId: "smoke-queued-compact",
+  });
+  assert.equal(commandWhileBusy.queued, true);
+  assert.equal(commandWhileBusy.queueLength, 2);
+  assert.deepEqual(commandWhileBusy.chat.queuedRequests.map((item) => item.kind), [
+    "prompt",
+    "command",
+  ]);
 
   const cancel = await hub.call("cancel", { chatId: chat.id });
   assert.equal(cancel.cancelledPermissions, 1);
-  assert.equal(cancel.droppedQueue, 1);
+  assert.equal(cancel.droppedQueue, 2);
+  assert.deepEqual(cancel.droppedPromptIds, ["smoke-queued-prompt"]);
+  assert.deepEqual(cancel.droppedCommandIds, ["smoke-queued-compact"]);
+
+  await waitFor(() =>
+    events.some(
+      (event) =>
+        event.type === "chat_event" &&
+        event.event?.type === "permission_decision" &&
+        event.event?.permissionId === permEvent.permissionId,
+    ),
+  );
+  const cancelledPermission = events.find(
+    (event) =>
+      event.type === "chat_event" &&
+      event.event?.type === "permission_decision" &&
+      event.event?.permissionId === permEvent.permissionId,
+  )?.event;
+  assert.equal(cancelledPermission.scope, "cancelled");
+  assert.equal(cancelledPermission.toolCallId, "fake-plan-tool");
 
   await waitFor(() =>
     events.some(
@@ -307,10 +386,31 @@ try {
         event.event?.stopReason === "cancelled",
     ),
   );
+  const cancelledDone = [...events].reverse().find(
+    (event) => event.type === "chat_event" && event.event?.type === "turn_done",
+  )?.event;
+  assert.ok(cancelledDone.turnSequence > 0, "turn_done keeps its canonical turn association");
+  assert.ok(cancelledDone.startedAt && cancelledDone.completedAt, "turn timestamps are persisted");
+  assert.ok(Number.isFinite(cancelledDone.durationMs), "turn duration is measured by the daemon");
+  const cancelledUser = [...events].reverse().find(
+    (event) =>
+      event.type === "chat_event" &&
+      event.event?.type === "user" &&
+      event.event?.turnSequence === cancelledDone.turnSequence,
+  )?.event;
+  assert.equal(cancelledUser?.startedAt, cancelledDone.startedAt);
+  assert.equal(cancelledUser?.clientPromptId, "smoke-active-prompt");
+  const cancelledPlanChat = (await hub.call("subscribe", { chatId: chat.id })).chat;
+  assert.equal(cancelledPlanChat.plan.lifecycle, "cancelled");
+  assert.equal(
+    cancelledPlanChat.plan.entries[0].status,
+    "in_progress",
+    "turn cancellation decorates the plan without forging an ACP step status",
+  );
 
-  // usage_update: context-window usage (used/size) and cost flow into the chat
-  // summary so the composer footer can show it.
-  await hub.call("send_prompt", { chatId: chat.id, text: "report usage please" });
+  // /usage is available only because this fake adapter advertises it; the
+  // provider-independent usage_update still feeds the composer footer.
+  await hub.call("execute_provider_command", { chatId: chat.id, command: "/usage" });
   await waitFor(() => events.some((event) => event.chat?.usage?.used === 45000));
   const usageChat = (await hub.call("subscribe", { chatId: chat.id })).chat;
   assert.equal(usageChat.usage.used, 45000);
@@ -328,13 +428,125 @@ try {
 
   // plan: the latest plan is kept as chat state so a panel/footer can show live
   // step progress instead of only appending to the transcript.
+  const planMark = events.length;
   await hub.call("send_prompt", { chatId: chat.id, text: "draft a plan" });
-  await waitFor(() => events.some((event) => event.chat?.plan?.entries?.length === 3));
+  await waitFor(() => events.slice(planMark).some((event) => event.chat?.plan?.entries?.length === 3));
+  await waitFor(() =>
+    events.slice(planMark).some(
+      (event) => event.type === "chat_state" && event.chat?.id === chat.id && event.chat?.status === "idle",
+    ),
+  );
   const planChat = (await hub.call("subscribe", { chatId: chat.id })).chat;
   assert.equal(planChat.plan.entries.length, 3);
   assert.equal(planChat.plan.entries[0].status, "completed");
   assert.equal(planChat.plan.entries[1].status, "in_progress");
   assert.equal(planChat.plan.entries[2].status, "pending");
+  assert.equal(planChat.plan.lifecycle, "incomplete", "unfinished end_turn is not presented as active");
+  assert.ok(planChat.plan.revision >= 2, "ACP replacement and turn settlement advance revisions");
+
+  // Dynamic ACP commands use their own semantic request boundary. Informational
+  // and state commands must not rename the chat or advance/retire its Plan.
+  assert.ok(planChat.availableCommands.some((command) => command.command === "status"));
+  assert.ok(planChat.availableCommands.some((command) => command.command === "$fake-skill"));
+  const commandTitle = planChat.title;
+  const commandPlan = JSON.stringify(planChat.plan);
+  const commandMode = planChat.mode;
+  const statusMark = events.length;
+  const statusCommand = await hub.call("execute_provider_command", {
+    chatId: chat.id,
+    command: "/status model",
+    clientCommandId: "smoke-command-status",
+  });
+  assert.equal(statusCommand.queued, false);
+  await waitFor(() =>
+    events.slice(statusMark).some(
+      (event) =>
+        event.type === "chat_event" &&
+        event.event?.type === "turn_done" &&
+        event.event?.requestKind === "command",
+    ),
+  );
+  let commandChat = await hub.call("subscribe", { chatId: chat.id });
+  assert.equal(commandChat.chat.title, commandTitle);
+  assert.equal(JSON.stringify(commandChat.chat.plan), commandPlan);
+  const statusBoundary = commandChat.history.find(
+    (event) => event.type === "command" && event.clientCommandId === "smoke-command-status",
+  );
+  assert.equal(statusBoundary.text, "/status model");
+  assert.equal(statusBoundary.presentation, "informational");
+
+  const compactMark = events.length;
+  await hub.call("execute_provider_command", {
+    chatId: chat.id,
+    command: "/compact",
+    clientCommandId: "smoke-command-compact",
+  });
+  await waitFor(() =>
+    events.slice(compactMark).some(
+      (event) => event.type === "chat_state" && event.chat?.statusDetail === "Compacting context",
+    ),
+  );
+  await waitFor(() =>
+    events.slice(compactMark).some(
+      (event) => event.type === "chat_event" && event.event?.type === "turn_done",
+    ),
+  );
+  commandChat = await hub.call("subscribe", { chatId: chat.id });
+  assert.equal(JSON.stringify(commandChat.chat.plan), commandPlan);
+  assert.ok(
+    commandChat.history.some(
+      (event) => event.type === "command_result" && /Command \/compact completed/.test(event.text),
+    ),
+  );
+
+  const planModeMark = events.length;
+  await hub.call("execute_provider_command", {
+    chatId: chat.id,
+    command: "/plan",
+    clientCommandId: "smoke-command-plan",
+  });
+  await waitFor(() =>
+    events.slice(planModeMark).some(
+      (event) => event.type === "chat_event" && event.event?.clientCommandId === "smoke-command-plan",
+    ),
+  );
+  await waitFor(() =>
+    events.slice(planModeMark).some(
+      (event) => event.type === "chat_event" && event.event?.type === "turn_done",
+    ),
+  );
+  commandChat = await hub.call("subscribe", { chatId: chat.id });
+  const toggledMode = commandMode === "plan" ? "test" : "plan";
+  assert.equal(
+    commandChat.chat.mode,
+    toggledMode,
+    "known setConfigOption metadata uses ACP config safely",
+  );
+  assert.equal(commandChat.chat.title, commandTitle);
+  assert.equal(JSON.stringify(commandChat.chat.plan), commandPlan);
+  assert.ok(
+    commandChat.history.some(
+      (event) => event.type === "command_result" && event.text === `mode set to ${toggledMode}`,
+    ),
+  );
+  const resetModeMark = events.length;
+  await hub.call("execute_provider_command", {
+    chatId: chat.id,
+    command: "/plan",
+    clientCommandId: "smoke-command-plan-reset",
+  });
+  await waitFor(() =>
+    events.slice(resetModeMark).some(
+      (event) => event.type === "chat_event" && event.event?.type === "turn_done",
+    ),
+  );
+  commandChat = await hub.call("subscribe", { chatId: chat.id });
+  assert.equal(commandChat.chat.mode, commandMode, "resetValue toggles a matching state command off");
+  assert.equal(JSON.stringify(commandChat.chat.plan), commandPlan);
+  await assert.rejects(
+    hub.call("execute_provider_command", { chatId: chat.id, command: "/not-advertised" }),
+    /Unknown provider command/,
+  );
 
   // tool-call diffs: a file edit surfaces a structured git-style diff (path,
   // +/- counts, hunk rows) so the UI renders it instead of "diff <path>".
@@ -370,7 +582,36 @@ try {
   const drainPerm = events.slice(drainMark).reverse().find((event) => event.event === "permission_request");
   const drainQueued = await hub.call("send_prompt", { chatId: chat.id, text: "draft a plan" });
   assert.equal(drainQueued.queued, true);
-  await hub.call("permission_response", { permissionId: drainPerm.permissionId, optionId: "allow" });
+  const drainCommand = await hub.call("execute_provider_command", {
+    chatId: chat.id,
+    command: "/status queue",
+    clientCommandId: "smoke-queued-command",
+  });
+  assert.equal(drainCommand.queued, true);
+  assert.equal(drainCommand.queueLength, 2);
+  const permissionResult = await hub.call("permission_response", {
+    permissionId: drainPerm.permissionId,
+    optionId: "allow",
+  });
+  assert.equal(permissionResult.chat.mode, "plan", "a one-time grant never renames the base mode");
+  assert.equal(permissionResult.chat.permissionState.activeOnce.scope, "once");
+  assert.equal(permissionResult.chat.permissionState.activeOnce.toolCallId, "fake-tool");
+  await waitFor(() =>
+    events.slice(drainMark).some(
+      (event) =>
+        event.type === "chat_event" &&
+        event.event?.type === "permission_decision" &&
+        event.event?.permissionId === drainPerm.permissionId,
+    ),
+  );
+  const permissionAudit = (await hub.call("subscribe", { chatId: chat.id })).history.find(
+    (event) =>
+      event.type === "permission_decision" && event.permissionId === drainPerm.permissionId,
+  );
+  assert.equal(permissionAudit.optionId, "allow");
+  assert.equal(permissionAudit.scope, "once");
+  assert.equal(permissionAudit.source, "user");
+  assert.equal(permissionAudit.toolCallId, "fake-tool");
   await waitFor(() =>
     events
       .slice(drainMark)
@@ -381,8 +622,23 @@ try {
           /draft a plan/.test(event.event?.text || ""),
       ),
   );
+  await waitFor(() =>
+    events
+      .slice(drainMark)
+      .some(
+        (event) =>
+          event.type === "chat_event" &&
+          event.event?.type === "command" &&
+          event.event?.clientCommandId === "smoke-queued-command",
+      ),
+  );
   const drained = (await hub.call("subscribe", { chatId: chat.id })).chat;
   assert.equal(drained.queued, 0);
+  assert.equal(
+    drained.permissionState.activeOnce,
+    null,
+    "allow_once authority is retired no later than the end of its turn",
+  );
 
   // authenticate: an adapter that needs auth reports `auth` status with the
   // advertised methods; authenticating retries session creation to reach idle.
@@ -403,7 +659,127 @@ try {
   assert.equal(mcpChat.title, "mcp-ok:1");
   assert.equal(mcpChat.mcpServers.length, 1);
   assert.equal(mcpChat.mcpServers[0].name, "echo-mcp");
+  const initialMcpInventory = await hub.call("mcp_list", { chatId: mcpChat.id });
+  assertMcpSecretsRedacted(initialMcpInventory);
+  assert.equal(initialMcpInventory.entries.length, 2);
+  assert.equal(
+    initialMcpInventory.entries.find((entry) => entry.name === "echo-mcp")?.status,
+    "applied",
+  );
+  assert.equal(
+    initialMcpInventory.entries.find((entry) => entry.name === "gated-mcp")?.status,
+    "unsupported",
+  );
+  const managedMcp = await hub.call("mcp_upsert", {
+    chatId: mcpChat.id,
+    server: {
+      name: "managed-echo",
+      transport: "stdio",
+      command: process.execPath,
+      args: ["-e", "process.exit(0)", "--token", mcpArgumentSecret],
+      env: [{ name: "TOKEN", value: "${MCP_SECRET_TEST}" }],
+      scope: { provider: "current", project: "current" },
+    },
+  });
+  assert.equal(managedMcp.inventory.pending, true);
+  assertMcpSecretsRedacted(managedMcp);
+  assert.match(JSON.stringify(managedMcp), /redacted/);
+  assert.deepEqual(managedMcp.server.envNames, ["TOKEN"]);
+  assert.equal(Object.hasOwn(managedMcp.server, "env"), false);
+  const mcpPreflight = await hub.call("mcp_test", {
+    chatId: mcpChat.id,
+    id: managedMcp.server.id,
+  });
+  assert.equal(mcpPreflight.ok, true);
+  assertMcpSecretsRedacted(mcpPreflight);
+  const appliedMcp = await hub.call("mcp_apply", { chatId: mcpChat.id });
+  assert.equal(appliedMcp.ok, true);
+  assertMcpSecretsRedacted(appliedMcp);
+  assert.equal(appliedMcp.chat.mcpApplyPending, false);
+  assert.deepEqual(
+    appliedMcp.chat.mcpServers.map((entry) => entry.name).sort(),
+    ["echo-mcp", "managed-echo"],
+  );
+  const disabledMcp = await hub.call("mcp_toggle", {
+    chatId: mcpChat.id,
+    id: managedMcp.server.id,
+    enabled: false,
+  });
+  assert.equal(disabledMcp.inventory.pending, true);
+  const reappliedMcp = await hub.call("mcp_apply", { chatId: mcpChat.id });
+  assert.equal(reappliedMcp.ok, true);
+  assert.deepEqual(reappliedMcp.chat.mcpServers.map((entry) => entry.name), ["echo-mcp"]);
+  await hub.call("mcp_remove", { chatId: mcpChat.id, id: managedMcp.server.id });
   await hub.call("close_chat", { chatId: mcpChat.id });
+
+  // Applying MCP never destroys a live session whose adapter cannot resume or
+  // load it. The configuration remains pending and the UI can direct the user
+  // to create a new chat, where session/new receives the new descriptor.
+  const newSessionMcpChat = await hub.call("new_chat", {
+    provider: "fakemcpnew",
+    cwd: projectPath,
+  });
+  const newSessionManagedMcp = await hub.call("mcp_upsert", {
+    chatId: newSessionMcpChat.id,
+    server: {
+      name: "new-session-only",
+      transport: "stdio",
+      command: process.execPath,
+      args: ["-e", "process.exit(0)"],
+      scope: { provider: "current", project: "current" },
+    },
+  });
+  const requiresNewSession = await hub.call("mcp_apply", {
+    chatId: newSessionMcpChat.id,
+  });
+  assert.equal(requiresNewSession.ok, false);
+  assert.equal(requiresNewSession.requiresNewSession, true);
+  assert.equal(requiresNewSession.chat.status, "idle");
+  assert.ok(requiresNewSession.chat.sessionId);
+  const activatedNewSessionMcpChat = await hub.call("new_chat", {
+    provider: "fakemcpnew",
+    cwd: projectPath,
+  });
+  assert.deepEqual(
+    activatedNewSessionMcpChat.mcpServers.map((entry) => entry.name),
+    ["new-session-only"],
+  );
+  await hub.call("close_chat", { chatId: activatedNewSessionMcpChat.id });
+  await hub.call("mcp_remove", {
+    chatId: newSessionMcpChat.id,
+    id: newSessionManagedMcp.server.id,
+  });
+  await hub.call("close_chat", { chatId: newSessionMcpChat.id });
+
+  // A rejected MCP payload is transactional: reconnect once with the previous
+  // private payload and restore its public inventory instead of leaving a
+  // partially reconfigured chat.
+  const rollbackMcpChat = await hub.call("new_chat", {
+    provider: "fakemcprollback",
+    cwd: projectPath,
+  });
+  const rollbackManagedMcp = await hub.call("mcp_upsert", {
+    chatId: rollbackMcpChat.id,
+    server: {
+      name: "broken-mcp",
+      transport: "stdio",
+      command: process.execPath,
+      args: ["-e", "process.exit(0)"],
+      scope: { provider: "current", project: "current" },
+    },
+  });
+  const rolledBackMcp = await hub.call("mcp_apply", {
+    chatId: rollbackMcpChat.id,
+  });
+  assert.equal(rolledBackMcp.ok, false);
+  assert.equal(rolledBackMcp.rollbackRestored, true);
+  assert.equal(rolledBackMcp.chat.status, "idle");
+  assert.deepEqual(rolledBackMcp.chat.mcpServers, []);
+  await hub.call("mcp_remove", {
+    chatId: rollbackMcpChat.id,
+    id: rollbackManagedMcp.server.id,
+  });
+  await hub.call("close_chat", { chatId: rollbackMcpChat.id });
 
   const secondChat = await hub.call("new_chat", { provider: "fake", cwd: projectPath });
   assert.notEqual(secondChat.id, chat.id);
@@ -456,9 +832,11 @@ try {
     ),
   );
   const tableHistory = await hub.call("subscribe", { chatId: chat.id });
-  const tableChunks = tableHistory.history.filter((event) => event.type === "agent_chunk");
+  const tableChunks = tableHistory.history.filter(
+    (event) => event.type === "agent_chunk" && event.text?.includes("| Area |"),
+  );
   assert.equal(tableChunks.length, 1);
-  assert.ok(tableChunks[0].text.includes("| Carpeta |"));
+  assert.ok(tableChunks[0].text.includes("| Area |"));
   assert.ok(tableChunks[0].text.includes("| nvim/ |"));
 
   const renderedTable = renderMarkdown(
@@ -543,6 +921,51 @@ try {
   assert.equal(listedRestored.chat.status, "idle");
   assert.equal(listedRestored.chat.mode, "restored");
 
+  // A provider-side restore error is a recoverable state, not permission to
+  // create/adopt another chat. Re-subscribing keeps the identity stable;
+  // retry is explicit, and Start fresh preserves the local transcript before
+  // assigning the newly-created ACP session its canonical id.
+  const restoreChat = await hub.call("new_chat", {
+    provider: "fakerestore",
+    cwd: projectPath,
+  });
+  await hub.call("send_prompt", {
+    chatId: restoreChat.id,
+    text: "history survives explicit recovery",
+  });
+  await hub.call("close_chat", { chatId: restoreChat.id });
+  const failedRestore = await hub.call("subscribe", { chatId: restoreChat.id });
+  assert.equal(failedRestore.chat.id, restoreChat.id);
+  assert.equal(failedRestore.chat.status, "error");
+  assert.equal(failedRestore.chat.restoreFailure?.kind, "restore");
+  assert.match(failedRestore.chat.restoreFailure?.message || "", /Internal error/);
+
+  const stableFailure = await hub.call("subscribe", { chatId: restoreChat.id });
+  assert.equal(stableFailure.chat.id, restoreChat.id, "subscribe never invents a replacement chat");
+  assert.equal(stableFailure.chat.restoreFailure?.attemptedAt, failedRestore.chat.restoreFailure.attemptedAt);
+
+  const retriedRestore = await hub.call("retry_restore", { chatId: restoreChat.id });
+  assert.equal(retriedRestore.chat.id, restoreChat.id);
+  assert.equal(retriedRestore.chat.restoreFailure?.kind, "restore");
+
+  const freshRecovery = await hub.call("recover_chat_fresh", { chatId: restoreChat.id });
+  assert.equal(freshRecovery.chat.status, "idle");
+  assert.equal(freshRecovery.chat.restoreFailure, null);
+  assert.notEqual(freshRecovery.chat.id, restoreChat.id);
+  assert.ok(
+    freshRecovery.history.some(
+      (event) => event.type === "user" && /history survives explicit recovery/.test(event.text || ""),
+    ),
+    "Start fresh preserves the local transcript",
+  );
+  const postRecoveryChats = await hub.call("list_chats");
+  assert.equal(
+    postRecoveryChats.chats.filter((candidate) => candidate.id === freshRecovery.chat.id).length,
+    1,
+    "recovery publishes one canonical chat identity",
+  );
+  assert.ok(!postRecoveryChats.chats.some((candidate) => candidate.id === restoreChat.id));
+
   await hub.call("close_chat", { chatId: chat.id });
   const restored = await hub.call("subscribe", { chatId: chat.id });
   assert.equal(restored.chat.status, "idle");
@@ -556,6 +979,36 @@ try {
     "high",
   );
   assert.deepEqual(restored.chat.additionalDirectories, [extraPath]);
+  assert.equal(restored.chat.plan.entries.length, 3, "plan survives close/reactivate");
+  assert.equal(restored.chat.plan.lifecycle, "previous", "a later turn retires the old plan");
+  assert.equal(
+    restored.chat.plan.previousLifecycle,
+    "incomplete",
+    "reactivation preserves whether the retired plan may still continue",
+  );
+  assert.equal(restored.chat.planSupported, true, "observed ACP plan support survives reactivation");
+  const restoredUserPrompts = restored.history.filter((event) => event.type === "user");
+  assert.ok(restoredUserPrompts.length >= 6, "reactivation restores the conversation, not only its last answer");
+  assert.ok(
+    restoredUserPrompts.some((event) => event.clientPromptId === "smoke-active-prompt"),
+    "the original prompt and its stable submission identity survive reactivation",
+  );
+  for (const event of restored.history) {
+    if (
+      !event.turnSequence ||
+      event.type === "history_boundary" ||
+      event.type === "user" ||
+      event.type === "command"
+    ) continue;
+    assert.ok(
+      restored.history.some(
+        (candidate) =>
+          ["user", "command"].includes(candidate.type) &&
+          candidate.turnSequence === event.turnSequence,
+      ),
+      `turn ${event.turnSequence} retains its request boundary`,
+    );
+  }
 
   const chats = await hub.call("list_chats");
   assert.ok(chats.chats.length >= 3);
@@ -587,21 +1040,61 @@ try {
   assert.equal(listedFiltered.chats.length, 1);
   assert.equal(listedFiltered.chats[0].sessionId, "listed-session");
 
-  // Provisional title: on an un-renamed chat, sending a prompt immediately
-  // retitles it from that prompt (first line, clipped) so the tmux tab shows
-  // the CURRENT entry instead of lagging one behind until the adapter's own
-  // session_info_update arrives.
+  // Title pipeline: the first meaningful prompt is a stable fallback, ACP may
+  // replace/evolve it, and a manual rename wins permanently (including after
+  // a daemon restart). The tab label is a separately bounded presentation.
   const titled = await hub.call("new_chat", { provider: "fake", cwd: projectPath });
-  const longLine = `necesito ayuda con ${"x".repeat(80)}\nsegunda linea ignorada`;
+  await hub.call("subscribe", { chatId: titled.id });
+  const longLine = `[Image 1] necesito ayuda con usage ${"x".repeat(80)}\nsegunda linea ignorada`;
+  let titleMark = events.length;
   await hub.call("send_prompt", { chatId: titled.id, text: longLine });
-  const titledState = await hub.call("subscribe", { chatId: titled.id });
+  await waitFor(() =>
+    events.slice(titleMark).some(
+      (event) => event.type === "chat_state" && event.chat?.id === titled.id && event.chat?.status === "idle",
+    ),
+  );
+  let titledState = await hub.call("subscribe", { chatId: titled.id });
   assert.ok(
     titledState.chat.title.startsWith("necesito ayuda con"),
     `provisional title from prompt (got: ${titledState.chat.title})`,
   );
   assert.ok(!titledState.chat.title.includes("segunda"), "only the first line is used");
-  assert.ok(titledState.chat.title.length <= 75, "provisional title is clipped");
-  await hub.call("delete_chat", { chatId: titled.id });
+  assert.ok(!titledState.chat.title.includes("[Image"), "attachment markers are omitted");
+  assert.equal(titledState.chat.titleSource, "prompt");
+  assert.ok(titledState.chat.tabTitle.length <= 32, "tab title has its own compact width");
+  const firstFallback = titledState.chat.title;
+
+  titleMark = events.length;
+  await hub.call("send_prompt", { chatId: titled.id, text: "report usage for a different topic" });
+  await waitFor(() =>
+    events.slice(titleMark).some(
+      (event) => event.type === "chat_state" && event.chat?.id === titled.id && event.chat?.status === "idle",
+    ),
+  );
+  titledState = await hub.call("subscribe", { chatId: titled.id });
+  assert.equal(titledState.chat.title, firstFallback, "later prompts keep the fallback stable");
+
+  titleMark = events.length;
+  await hub.call("send_prompt", { chatId: titled.id, text: "agent title: Mejorar títulos de tmux" });
+  await waitFor(() =>
+    events.slice(titleMark).some(
+      (event) => event.chat?.id === titled.id && event.chat?.title === "Mejorar títulos de tmux",
+    ),
+  );
+  titledState = await hub.call("subscribe", { chatId: titled.id });
+  assert.equal(titledState.chat.titleSource, "agent");
+
+  await hub.call("rename_chat", { chatId: titled.id, title: "Título manual persistente" });
+  titleMark = events.length;
+  await hub.call("send_prompt", { chatId: titled.id, text: "agent title: No debe reemplazarlo" });
+  await waitFor(() =>
+    events.slice(titleMark).some(
+      (event) => event.type === "chat_state" && event.chat?.id === titled.id && event.chat?.status === "idle",
+    ),
+  );
+  titledState = await hub.call("subscribe", { chatId: titled.id });
+  assert.equal(titledState.chat.title, "Título manual persistente");
+  assert.equal(titledState.chat.titleSource, "manual");
 
   // session/delete (capability-gated), live-peer path: a fresh active chat is
   // deleted through its running adapter and removed from the registry.
@@ -622,6 +1115,22 @@ try {
   assert.ok(persisted.chats.some((candidate) => candidate.id === chat.id));
   assert.ok(persisted.chats.some((candidate) => candidate.id === secondChat.id));
   assert.ok(persisted.chats.some((candidate) => candidate.sessionId === "listed-session"));
+  const persistedTitle = persisted.chats.find((candidate) => candidate.id === titled.id);
+  assert.equal(persistedTitle.title, "Título manual persistente");
+  assert.equal(persistedTitle.titleSource, "manual", "manual provenance survives daemon restart");
+  const persistedPlan = persisted.chats.find((candidate) => candidate.id === chat.id)?.plan;
+  assert.equal(persistedPlan?.entries?.length, 3, "canonical plan survives daemon restart");
+  assert.equal(persistedPlan?.lifecycle, "previous");
+  assert.equal(
+    persistedPlan?.previousLifecycle,
+    "incomplete",
+    "daemon restart preserves the retired plan's terminal provenance",
+  );
+  assert.equal(
+    persisted.chats.find((candidate) => candidate.id === chat.id)?.planSupported,
+    true,
+    "agent plan capability survives daemon restart",
+  );
 
   // session/delete, saved-path: after a restart the chat is a stored record with
   // no live adapter, so the daemon uses a temporary one to delete it.
@@ -632,6 +1141,8 @@ try {
   assert.ok(!afterSavedDelete.chats.some((candidate) => candidate.id === chat.id));
 
   await restartedHub.call("shutdown");
+  assertMcpSecretsRedacted(events);
+  assertMcpSecretsRedacted(daemonLogs);
   restartedHub.close();
 
   console.log("tmux-acp-hub smoke test passed");
@@ -683,6 +1194,13 @@ function renderMarkdown(input) {
     `render markdown failed\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
   );
   return result.stdout;
+}
+
+function assertMcpSecretsRedacted(value) {
+  const serialized = JSON.stringify(value);
+  assert.doesNotMatch(serialized, new RegExp(mcpArgumentSecret));
+  assert.doesNotMatch(serialized, new RegExp(mcpUrlSecret));
+  assert.doesNotMatch(serialized, /never-expose-this/);
 }
 
 async function connectWithRetry(socketPath) {

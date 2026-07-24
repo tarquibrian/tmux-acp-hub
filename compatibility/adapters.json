@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "acpProtocolVersion": 1,
+  "defaultAgent": "codex",
+  "supportPolicy": {
+    "hubNodeMajors": [
+      18,
+      22,
+      24
+    ],
+    "adapterProbeNode": 22,
+    "testedVersionWindow": 2,
+    "releaseTrack": "default-and-previous"
+  },
+  "adapters": {
+    "codex": {
+      "label": "Codex ACP",
+      "package": "@agentclientprotocol/codex-acp",
+      "defaultVersion": "1.1.7",
+      "testedVersions": [
+        "1.1.7",
+        "1.1.5"
+      ],
+      "node": ">=22",
+      "registryTag": "latest",
+      "requiredCapabilities": [
+        "loadSession",
+        "promptCapabilities.embeddedContext",
+        "promptCapabilities.image",
+        "sessionCapabilities.resume",
+        "sessionCapabilities.list",
+        "sessionCapabilities.close",
+        "sessionCapabilities.delete",
+        "sessionCapabilities.additionalDirectories",
+        "mcpCapabilities.http"
+      ]
+    },
+    "claude": {
+      "label": "Claude ACP",
+      "package": "@agentclientprotocol/claude-agent-acp",
+      "defaultVersion": "0.61.0",
+      "testedVersions": [
+        "0.61.0",
+        "0.60.0"
+      ],
+      "node": ">=22",
+      "registryTag": "latest",
+      "requiredCapabilities": [
+        "loadSession",
+        "promptCapabilities.embeddedContext",
+        "promptCapabilities.image",
+        "sessionCapabilities.resume",
+        "sessionCapabilities.list",
+        "sessionCapabilities.close",
+        "sessionCapabilities.delete",
+        "sessionCapabilities.additionalDirectories",
+        "sessionCapabilities.fork",
+        "mcpCapabilities.http",
+        "mcpCapabilities.sse"
+      ]
+    }
+  }
+}

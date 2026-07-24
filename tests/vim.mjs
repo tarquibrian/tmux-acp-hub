@@ -24,6 +24,7 @@ function makeUi() {
   ui.refreshRawInputPrompt = () => {};
   ui.saveRawDraft = () => {};
   ui.scrollTranscript = () => {};
+  ui.notify = () => {};
   ui.requestCancelCurrentTurn = () => {
     ui.cancelRequested += 1;
     return ui.cancelRequested > 0 && ui.currentChat.status === "responding";
@@ -64,6 +65,22 @@ const press = (ui, session, ch) => ui.handleVimKeypress(session, ch, key(ch.leng
   assert.equal(ui.handleVimKeypress(s, "", key("escape")), true);
   assert.equal(s.vimMode, "normal");
   assert.equal(s.cursor, 9);
+}
+
+// An open Plan is visibility rather than a Vim mode. Esc closes the drawer and
+// then continues into Vim's ordinary insert -> NORMAL transition.
+{
+  const ui = makeUi();
+  const s = makeSession("hola mundo");
+  ui.planExpanded = true;
+  ui.togglePlanExpanded = (force) => {
+    ui.planExpanded = force ?? !ui.planExpanded;
+    return true;
+  };
+  assert.equal(ui.handlePlanViewerKey(s, "", key("escape")), false);
+  assert.equal(ui.planExpanded, false);
+  assert.equal(ui.handleVimKeypress(s, "", key("escape")), true);
+  assert.equal(s.vimMode, "normal");
 }
 
 // A REAL terminal ESC arrives as {name:"escape", meta:true} (readline treats
@@ -123,6 +140,23 @@ const press = (ui, session, ch) => ui.handleVimKeypress(session, ch, key(ch.leng
   assert.equal(s.line, "abc");
 }
 
+// Attachment placeholders are atomic in normal mode: l/h jump across the
+// whole label and x removes it (plus the pending attachment) in one edit.
+{
+  const ui = makeUi();
+  ui.pendingAttachments = [{ n: 1, name: "shot.png", path: "/tmp/shot.png", kind: "image" }];
+  const token = "[Image #1]";
+  const s = makeSession(`a${token}b`, 1);
+  s.vimMode = "normal";
+  press(ui, s, "l");
+  assert.equal(s.cursor, 1 + token.length);
+  press(ui, s, "h");
+  assert.equal(s.cursor, 1);
+  press(ui, s, "x");
+  assert.equal(s.line, "ab");
+  assert.equal(ui.pendingAttachments.length, 0);
+}
+
 // dd kills the whole line into the kill ring; p pastes it back.
 {
   const ui = makeUi();
@@ -175,12 +209,15 @@ const press = (ui, session, ch) => ui.handleVimKeypress(session, ch, key(ch.leng
   assert.equal(ui.handleVimKeypress(s, "", key("return")), false);
 }
 
-// Esc in normal mode requests a turn cancel when the agent is active.
+// Esc in normal mode uses a guarded two-step turn cancel.
 {
   const ui = makeUi();
   ui.currentChat.status = "responding";
   const s = makeSession("x", 0);
   s.vimMode = "normal";
+  ui.handleVimKeypress(s, "", key("escape"));
+  assert.equal(ui.cancelRequested, 0);
+  assert.match(ui.turnCancelConfirmationLabel(s), /Press Esc again/);
   ui.handleVimKeypress(s, "", key("escape"));
   assert.equal(ui.cancelRequested, 1);
 }
@@ -319,6 +356,8 @@ const press = (ui, session, ch) => ui.handleVimKeypress(session, ch, key(ch.leng
   ui.handleVimKeypress(s, "", key("escape"));
   assert.equal(s.vimOp, "");
   assert.equal(ui.cancelRequested, 0);
+  ui.handleVimKeypress(s, "", key("escape"));
+  assert.equal(ui.cancelRequested, 0, "first clean Esc arms cancellation");
   ui.handleVimKeypress(s, "", key("escape"));
   assert.equal(ui.cancelRequested, 1);
 }
